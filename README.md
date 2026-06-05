@@ -1,6 +1,6 @@
 # Parley
 
-**A conversational architecture for custom robots**
+Most robots wire their sensors and motors directly to a central processor. Parley gives each sensor and each motor its own microcontroller, and a Raspberry Pi sits at the center with the ability to rewrite the firmware on any of them over WiFi at any time. That is what makes AI-driven development practical: an AI agent researches the hardware, writes the firmware, deploys it to the right microcontroller, reads the logs, and iterates until it works — while the human directs what should be built and verifies that the results match reality, without writing any code.
 
 Author: Steve Nelson
 License: Open Source
