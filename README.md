@@ -1,6 +1,6 @@
 # Parley
 
-**A conversational architecture for distributed robots.**
+**A conversational architecture for custom robots**
 
 Author: Steve Nelson
 License: Open Source
