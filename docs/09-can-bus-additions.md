@@ -2,7 +2,7 @@
 
 This document describes how CAN bus is used within a Parley system. CAN is not a fundamental architectural element. It is a targeted addition for specific synchronization problems that MQTT cannot solve.
 
-Read `01-system-architecture.md` first for the broader system context. The architecture remains primarily MQTT-based; this document describes when and how to layer in CAN where MQTT timing is inadequate.
+Read [01-system-architecture.md](01-system-architecture.md) first for the broader system context. The architecture remains primarily MQTT-based; this document describes when and how to layer in CAN where MQTT timing is inadequate.
 
 ## The Mental Model
 
@@ -82,9 +82,9 @@ For a two-motor differential drive robot, the bus might be just two transceivers
 
 ## Firmware: TWAI Capability in the Universal Template
 
-The universal template (see `02-node-firmware-design.md`) gains optional TWAI/CAN support. Nodes detect at boot whether CAN is configured — either by probing for the transceiver, or by reading a configuration flag in NVS — and initialize the TWAI peripheral accordingly.
+The universal template (see [02-node-firmware-design.md](02-node-firmware-design.md)) gains optional TWAI/CAN support. Nodes detect at boot whether CAN is configured — either by probing for the transceiver, or by reading a configuration flag in NVS — and initialize the TWAI peripheral accordingly.
 
-A node with CAN advertises this capability during registration. The capability ontology (see `06-role-discovery.md`) gains a new entry: `can_bus_member` with parameters indicating which bus and at what bit rate.
+A node with CAN advertises this capability during registration. The capability ontology (see [06-role-discovery.md](06-role-discovery.md)) gains a new entry: `can_bus_member` with parameters indicating which bus and at what bit rate.
 
 Application code on CAN-equipped nodes gets two additional hooks beyond the standard plugin interface:
 
@@ -124,7 +124,7 @@ The principle: **MQTT handles command and report. CAN handles coordinate.** Anyt
 
 ## Registration With CAN
 
-During registration (see `05-registration-workflow.md`), the conversation includes a question about CAN:
+During registration (see [05-registration-workflow.md](05-registration-workflow.md)), the conversation includes a question about CAN:
 
 > AI agent: Does this node have a CAN transceiver? If yes, what bus is it on and what bit rate?
 

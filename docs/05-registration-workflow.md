@@ -2,7 +2,7 @@
 
 This document describes how new peripheral hardware joins the Parley system. Registration is the most concrete example of the conversational integration model — the workflow where the human, the AI agent, and the running system work together to bring a new piece of hardware to life.
 
-Read `01-system-architecture.md` for context on the overall system, `02-node-firmware-design.md` for how individual nodes are structured, and `08-collaboration-workflow.md` for the dashboard interface through which registration conversations happen.
+Read [01-system-architecture.md](01-system-architecture.md) for context on the overall system, [02-node-firmware-design.md](02-node-firmware-design.md) for how individual nodes are structured, and [08-collaboration-workflow.md](08-collaboration-workflow.md) for the dashboard interface through which registration conversations happen.
 
 ## What Registration Is
 
@@ -47,7 +47,7 @@ The AI agent acknowledges and asks for orienting information. Not a rigid form �
 - How is it wired to the ESP32? (specific pins for power, ground, data lines, interrupts)
 - Where is it mounted on the robot? (high-level location; spatial details come later)
 - What is the intent? (what role this will play in the overall system)
-- Does this node have a CAN transceiver? (if motion coordination might be needed; see `09-can-bus-additions.md`)
+- Does this node have a CAN transceiver? (if motion coordination might be needed; see [09-can-bus-additions.md](09-can-bus-additions.md))
 
 Humans answer in natural language. The AI agent parses these into structured information and asks follow-ups for anything unclear.
 
@@ -76,7 +76,7 @@ The conversation continues until the design is agreed.
 
 ### Phase 3: Firmware Generation
 
-The AI agent writes the application firmware. This is the code that fills in the plugin interface defined in `02-node-firmware-design.md`:
+The AI agent writes the application firmware. This is the code that fills in the plugin interface defined in [02-node-firmware-design.md](02-node-firmware-design.md):
 
 - `setup_peripheral()` — initialize the hardware and register MQTT topics
 - `loop_peripheral()` — read sensors and check for events
@@ -91,7 +91,7 @@ When the build succeeds, the AI agent presents the generated code (or at least t
 
 The new firmware is OTA-pushed to the node. Because the node is in factory mode, factory firmware accepts the update and reboots into the new application slot.
 
-The AI agent watches for the node to come back online and announce itself with the new firmware version. The validation gate (see `03-recovery-and-resilience.md`) determines whether the firmware is healthy enough to keep:
+The AI agent watches for the node to come back online and announce itself with the new firmware version. The validation gate (see [03-recovery-and-resilience.md](03-recovery-and-resilience.md)) determines whether the firmware is healthy enough to keep:
 
 - Did it connect to WiFi?
 - Did it connect to MQTT?
@@ -105,7 +105,7 @@ If validation passes, the agent moves to functional verification: does the perip
 
 Humans are essential to functional verification, because they can observe the physical robot. "I just sent a command to spin the motor — did it spin?" "Is the GPS reporting your actual location?"
 
-If verification fails or values look wrong, the workflow iterates. The AI agent diagnoses based on logs and observed behavior, proposes a fix, regenerates firmware, pushes again. The local logging subsystem (see `10-local-logging.md`) makes this loop fast even when initial firmware fails to validate — the failed firmware's log is automatically retrieved after rollback.
+If verification fails or values look wrong, the workflow iterates. The AI agent diagnoses based on logs and observed behavior, proposes a fix, regenerates firmware, pushes again. The local logging subsystem (see [10-local-logging.md](10-local-logging.md)) makes this loop fast even when initial firmware fails to validate — the failed firmware's log is automatically retrieved after rollback.
 
 If verification passes, registration moves to the final phase.
 
@@ -117,7 +117,7 @@ The node is now working in isolation. Final steps integrate it into the system a
 
 **Update the part library.** The integration approach for this part is recorded — library used, key configuration, validation criteria, gotchas encountered. Future registrations of the same part can reuse this.
 
-**Update the spatial layout model.** The peripheral's mounting location and orientation are recorded (see `07-spatial-and-physical-model.md` for the layout file format).
+**Update the spatial layout model.** The peripheral's mounting location and orientation are recorded (see [07-spatial-and-physical-model.md](07-spatial-and-physical-model.md) for the layout file format).
 
 **Capture the capability registration.** What this node can do — what it publishes, what it accepts as commands — is recorded so other parts of the system can find it.
 

@@ -2,7 +2,7 @@
 
 This document describes how Parley can determine the *roles* of its peripherals through observation rather than declaration. It is the most exploratory document in the set, describing a capability that is well-grounded in principle, valuable when it works, and intended to be implemented incrementally as the system matures.
 
-Read `05-registration-workflow.md` first. Role discovery extends the registration workflow with an additional idea: not all of a peripheral's identity needs to be told to the system; some of it can be derived from what the peripheral does in the world.
+Read [05-registration-workflow.md](05-registration-workflow.md) first. Role discovery extends the registration workflow with an additional idea: not all of a peripheral's identity needs to be told to the system; some of it can be derived from what the peripheral does in the world.
 
 ## Status
 
@@ -241,7 +241,7 @@ For a robot that has the potential to damage itself or its environment (heavy, f
 
 This is the most ambitious capability in Parley and should be implemented incrementally, not as a single project.
 
-**Phase 1: Capability advertisement only.** Every node declares its capabilities at registration. The system builds a capability inventory but does not try to infer roles. This is achievable with the work described in `05-registration-workflow.md` and provides most of the immediate practical benefit.
+**Phase 1: Capability advertisement only.** Every node declares its capabilities at registration. The system builds a capability inventory but does not try to infer roles. This is achievable with the work described in [05-registration-workflow.md](05-registration-workflow.md) and provides most of the immediate practical benefit.
 
 **Phase 2: Manual structural model.** Humans, with AI agent assistance, write the structural model explicitly. "Wheels A and B are differential drive, wheelbase 0.4 m, wheel radius 0.05 m." Stored in the repository. Used for control. No automatic discovery yet.
 

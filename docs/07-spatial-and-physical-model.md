@@ -2,7 +2,7 @@
 
 This document describes how Parley represents the physical layout of a robot — where peripherals are mounted, how they are oriented, and why this matters for interpreting sensor data and controlling actions.
 
-Read `01-system-architecture.md` for system context, `05-registration-workflow.md` for how layout information is captured during registration, and `06-role-discovery.md` for how some of this information can be derived from observation rather than declaration.
+Read [01-system-architecture.md](01-system-architecture.md) for system context, [05-registration-workflow.md](05-registration-workflow.md) for how layout information is captured during registration, and [06-role-discovery.md](06-role-discovery.md) for how some of this information can be derived from observation rather than declaration.
 
 ## Why Spatial Information Matters
 
@@ -50,7 +50,7 @@ The robot's pose in the world frame is what navigation algorithms use to plan an
 
 ## How Layout Information Is Captured
 
-During registration of a peripheral (see `05-registration-workflow.md`), the human provides spatial information as part of the conversation. The level of detail depends on what the peripheral needs.
+During registration of a peripheral (see [05-registration-workflow.md](05-registration-workflow.md)), the human provides spatial information as part of the conversation. The level of detail depends on what the peripheral needs.
 
 ### Position-Only Peripherals
 
@@ -220,7 +220,7 @@ The layout changes when:
 - A peripheral is moved.
 - A peripheral is replaced with a different model that has different mounting.
 - The robot itself is modified (a wheel changed, a sensor relocated).
-- Discovery (see `06-role-discovery.md`) refines parameters.
+- Discovery (see [06-role-discovery.md](06-role-discovery.md)) refines parameters.
 
 Each change is a deliberate update to the layout file. The change is committed to git with a clear message ("moved IMU 3 cm forward to clear new servo mount"). The change is also reflected in any task summaries that document the modification.
 
@@ -232,7 +232,7 @@ The layout file describes the physical robot, but the description can be wrong. 
 
 **During registration.** When a new peripheral is added, the validation phase often surfaces layout errors. "The IMU is declared as mounted with X forward, but readings during a forward push show motion in the IMU's Y axis. The mounting may actually be rotated 90 degrees." Catching this immediately is much better than discovering it later.
 
-**During discovery.** Role discovery (see `06-role-discovery.md`) compares predicted to observed motion. Mismatches often trace back to layout errors — a wheel offset that does not match the actual mounting, an axis orientation that is wrong, a wheelbase measurement that is off.
+**During discovery.** Role discovery (see [06-role-discovery.md](06-role-discovery.md)) compares predicted to observed motion. Mismatches often trace back to layout errors — a wheel offset that does not match the actual mounting, an axis orientation that is wrong, a wheelbase measurement that is off.
 
 **During normal operation.** The system can continuously check layout-derived predictions against observed sensor data. Persistent prediction errors suggest the layout is stale — something has physically changed without the layout being updated.
 
@@ -252,7 +252,7 @@ Standard mounting conventions reduce confusion:
 
 **For GPS antennas, document the patch orientation.** GPS patch antennas have a directional gain pattern — the "up" face should face the sky. Mounting matters more than is often appreciated for GPS performance.
 
-These conventions are captured in the part library (see `05-registration-workflow.md`) so future registrations of the same hardware type follow the same patterns.
+These conventions are captured in the part library (see [05-registration-workflow.md](05-registration-workflow.md)) so future registrations of the same hardware type follow the same patterns.
 
 ## Articulated Robots
 

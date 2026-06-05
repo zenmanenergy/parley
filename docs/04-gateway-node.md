@@ -2,7 +2,7 @@
 
 This document describes the dedicated infrastructure ESP32 that bridges the Raspberry Pi and the swarm of peripheral nodes. The gateway is not a peripheral — it is critical system infrastructure with its own design considerations.
 
-Read `01-system-architecture.md` for context on where the gateway fits in the larger Parley system.
+Read [01-system-architecture.md](01-system-architecture.md) for context on where the gateway fits in the larger Parley system.
 
 ## What the Gateway Is
 
@@ -42,7 +42,7 @@ The flow:
 
 - New node connects to the gateway's AP using factory firmware's hardcoded credentials.
 - Node announces itself on `system/discovery` with a "needs provisioning" status, identifying itself by MAC address.
-- The Pi sees the announcement and the AI agent begins the registration conversation (see `05-registration-workflow.md`).
+- The Pi sees the announcement and the AI agent begins the registration conversation (see [05-registration-workflow.md](05-registration-workflow.md)).
 - During registration, the gateway facilitates the conversation: relaying messages, pushing firmware to the new node, watching for the node to come back online with its assigned identity.
 - After provisioning, the new node has an assigned node ID, application firmware, and a defined role.
 
@@ -117,7 +117,7 @@ This adds another recovery layer — the Pi acts as a watchdog of the gateway, j
 
 ## Gateway Recovery
 
-The gateway uses the same A/B/factory partition scheme as peripheral nodes (see `02-node-firmware-design.md` and `03-recovery-and-resilience.md`). Its application firmware can be updated via OTA. The same watchdog, validation gate, and boot counter logic applies.
+The gateway uses the same A/B/factory partition scheme as peripheral nodes (see [02-node-firmware-design.md](02-node-firmware-design.md) and [03-recovery-and-resilience.md](03-recovery-and-resilience.md)). Its application firmware can be updated via OTA. The same watchdog, validation gate, and boot counter logic applies.
 
 One important difference: the gateway's recovery target is the Pi over USB, not WiFi to itself. When the gateway is in factory mode, its factory firmware needs to:
 
@@ -132,7 +132,7 @@ This means the gateway's factory firmware can be slightly less paranoid than per
 
 ## The Gateway's Own Identity
 
-Even though the gateway is infrastructure, it runs the same universal template as any other node (see `02-node-firmware-design.md`). It publishes heartbeats to `nodes/gateway/status`. It accepts OTA updates. Its `peripheral_health_check()` returns true when the AP is up, MQTT bridging is working, and USB is connected.
+Even though the gateway is infrastructure, it runs the same universal template as any other node (see [02-node-firmware-design.md](02-node-firmware-design.md)). It publishes heartbeats to `nodes/gateway/status`. It accepts OTA updates. Its `peripheral_health_check()` returns true when the AP is up, MQTT bridging is working, and USB is connected.
 
 The application code for the gateway implements "be a gateway" — `setup_peripheral()` starts the AP, `loop_peripheral()` handles bridging, and so on. The gateway is conceptually a node with a specific role, just one whose role is system infrastructure rather than sensing or actuation.
 

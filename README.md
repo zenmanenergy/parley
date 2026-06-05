@@ -93,15 +93,15 @@ These limits describe the boundary of what is currently understood. They are not
 
 This document is the orientation. The architecture is described across ten further documents:
 
-- `01-system-architecture.md` — overall structure and components
-- `02-node-firmware-design.md` — the universal template and partition layout
-- `03-recovery-and-resilience.md` — the autonomous recovery cascade
-- `04-gateway-node.md` — the gateway ESP32 connecting Pi to swarm
-- `05-registration-workflow.md` — the conversational integration process
-- `06-role-discovery.md` — emergent role assignment through observation
-- `07-spatial-and-physical-model.md` — physical layout representation
-- `08-collaboration-workflow.md` — the dashboard interface that unifies system visibility, AI conversation, and direct command execution
-- `09-can-bus-additions.md` — targeted CAN coordination for motion-critical peers
-- `10-local-logging.md` — per-node logging that survives firmware rollback for post-failure diagnostics
+- [01-system-architecture.md](docs/01-system-architecture.md) — overall structure and components
+- [02-node-firmware-design.md](docs/02-node-firmware-design.md) — the universal template and partition layout
+- [03-recovery-and-resilience.md](docs/03-recovery-and-resilience.md) — the autonomous recovery cascade
+- [04-gateway-node.md](docs/04-gateway-node.md) — the gateway ESP32 connecting Pi to swarm
+- [05-registration-workflow.md](docs/05-registration-workflow.md) — the conversational integration process
+- [06-role-discovery.md](docs/06-role-discovery.md) — emergent role assignment through observation
+- [07-spatial-and-physical-model.md](docs/07-spatial-and-physical-model.md) — physical layout representation
+- [08-collaboration-workflow.md](docs/08-collaboration-workflow.md) — the dashboard interface that unifies system visibility, AI conversation, and direct command execution
+- [09-can-bus-additions.md](docs/09-can-bus-additions.md) — targeted CAN coordination for motion-critical peers
+- [10-local-logging.md](docs/10-local-logging.md) — per-node logging that survives firmware rollback for post-failure diagnostics
 
-Engineers evaluating Parley should read this document first, then `01-system-architecture.md` for the technical overview.
+Engineers evaluating Parley should read this document first, then [01-system-architecture.md](docs/01-system-architecture.md) for the technical overview.

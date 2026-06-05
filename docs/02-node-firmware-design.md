@@ -2,7 +2,7 @@
 
 This document describes how individual ESP32 nodes are structured at the firmware level. It covers the universal template that every node runs, the flash partition layout, the boot logic, and the plugin interface that allows per-peripheral code to integrate cleanly.
 
-Read `01-system-architecture.md` first for context on how nodes fit into the larger Parley system.
+Read [01-system-architecture.md](01-system-architecture.md) first for context on how nodes fit into the larger Parley system.
 
 ## The Universal Template
 
@@ -35,7 +35,7 @@ A few notes on the choices.
 
 **Why 16 MB modules instead of 4 MB.** The default ESP32 modules ship with 4 MB of flash, which forces uncomfortable compromises: smaller A/B slots, no factory partition, no filesystem. The cost difference for 16 MB modules is small in single-quantity purchases and the architectural benefit is large. The partition layout depends on this — changing partition layout later requires USB reflashing every existing board, which defeats the wireless-only operational goal.
 
-**Why a factory partition at all.** The factory partition is a minimal, never-changed firmware that exists solely to recover the node when both A and B slots are broken. Its existence is what makes the system fully recoverable over WiFi. See `03-recovery-and-resilience.md` for the full rationale.
+**Why a factory partition at all.** The factory partition is a minimal, never-changed firmware that exists solely to recover the node when both A and B slots are broken. Its existence is what makes the system fully recoverable over WiFi. See [03-recovery-and-resilience.md](03-recovery-and-resilience.md) for the full rationale.
 
 **Why LittleFS instead of SPIFFS.** SPIFFS is the older default but is no longer recommended by Espressif. LittleFS is more robust against power-loss corruption, supports proper directories, and has better wear leveling.
 
@@ -273,7 +273,7 @@ In the template:
 - Validation gate and rollback marking
 - Heartbeat publishing
 - System log publishing (real-time MQTT logging)
-- Local log file management on LittleFS (persistent across rollbacks; see `10-local-logging.md`)
+- Local log file management on LittleFS (persistent across rollbacks; see [10-local-logging.md](10-local-logging.md))
 - NVS access utilities
 - The main loop structure
 
@@ -358,7 +358,7 @@ The investment in tests pays off most for the template, because template bugs af
 
 ## Stability of the Plugin Interface
 
-When an AI agent generates application code for a new peripheral (during the registration workflow described in `05-registration-workflow.md`), the generated code follows the patterns above. The plugin interface is what the agent is filling in; the template is what the agent is plugging into.
+When an AI agent generates application code for a new peripheral (during the registration workflow described in [05-registration-workflow.md](05-registration-workflow.md)), the generated code follows the patterns above. The plugin interface is what the agent is filling in; the template is what the agent is plugging into.
 
 This means the plugin interface should be stable. Changes to the interface are expensive — they invalidate every node's existing code and require the agent to be re-prompted with the new interface. The interface should be treated as a public API: extend additively, do not change existing signatures, and version the interface if breaking changes become unavoidable.
 

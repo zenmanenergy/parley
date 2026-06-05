@@ -2,7 +2,7 @@
 
 This document specifies the Parley dashboard: a unified web interface that combines system visibility, AI-mediated conversations, and direct command execution into a single working environment.
 
-Read `01-system-architecture.md` for the underlying system. The dashboard is the human-facing layer on top of that system.
+Read [01-system-architecture.md](01-system-architecture.md) for the underlying system. The dashboard is the human-facing layer on top of that system.
 
 ## What the Dashboard Is
 
@@ -242,7 +242,7 @@ The human's review effort can match the stated confidence. High-confidence chang
 
 Several risks are inherent to code-review-mediated AI work:
 
-- **Subtle bugs in generated code.** Code that compiles, validates, and produces reasonable-looking behavior can have edge-case errors a quick review will miss. The local logging subsystem (see `10-local-logging.md`) helps catch problems at runtime, but caution is warranted for any change to safety-relevant code.
+- **Subtle bugs in generated code.** Code that compiles, validates, and produces reasonable-looking behavior can have edge-case errors a quick review will miss. The local logging subsystem (see [10-local-logging.md](10-local-logging.md)) helps catch problems at runtime, but caution is warranted for any change to safety-relevant code.
 - **Over-trust drift.** When high-trust mode works well for many small changes, humans may extend trust to changes that warrant more scrutiny. The AI's confidence indication helps but is itself uncertain. Discipline about reviewing substantive changes is needed regardless of how routine the workflow feels.
 - **Code editing UI quality matters.** If humans rely on the dashboard for code editing, the editor needs to be genuinely capable — syntax highlighting, find-and-replace, multi-cursor editing, the things developers expect. A poor editor pushes humans back to their own tools, fragmenting the workflow.
 
@@ -341,7 +341,7 @@ The optional spatial map view shows the robot schematically with nodes positione
 - Mounting adjacency matters for debugging (two nodes close together both showing issues may share a cause — loose connector, damaged cable, EMI source).
 - Conversations need to specify physical context: clicking a node on the map starts a conversation focused on that physical location.
 
-The map is built from the layout file (see `07-spatial-and-physical-model.md`). It updates when the layout is updated. It is a visualization of the spatial model, not a separate authoritative source.
+The map is built from the layout file (see [07-spatial-and-physical-model.md](07-spatial-and-physical-model.md)). It updates when the layout is updated. It is a visualization of the spatial model, not a separate authoritative source.
 
 The map is optional. For simple robots with few nodes, the list view is sufficient and the map adds unneeded complexity. The dashboard should support disabling the map for projects that don't need it.
 

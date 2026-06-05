@@ -64,7 +64,7 @@ Consolidation onto a single node is appropriate when functions are inherently co
 
 What to avoid: putting unrelated functions on the same node to save hardware cost. The complexity tax is real, and it grows nonlinearly as more functions interact.
 
-All peripheral nodes run the same universal template (see `02-node-firmware-design.md`). The only thing that differs between nodes is the application logic for their specific peripheral.
+All peripheral nodes run the same universal template (see [02-node-firmware-design.md](02-node-firmware-design.md)). The only thing that differs between nodes is the application logic for their specific peripheral.
 
 ## Communication
 
@@ -87,7 +87,7 @@ Topic structure follows a convention:
 - `system/discovery` — node announcements and registration
 - `system/anomalies` — surfaced issues for human and AI review
 
-Specific topic schemas are defined per-capability and live in the part library (see `05-registration-workflow.md`).
+Specific topic schemas are defined per-capability and live in the part library (see [05-registration-workflow.md](05-registration-workflow.md)).
 
 ### Optional CAN Bus for Motion Coordination
 
@@ -95,7 +95,7 @@ For specific cases where multiple actuators need millisecond-level synchronizati
 
 CAN does not replace MQTT for these nodes. They remain full MQTT clients, accessible to the AI agent for registration, OTA, configuration, and telemetry. CAN is an additional peer-to-peer channel used only for the runtime coordination data that needs to flow faster than MQTT can deliver.
 
-Most nodes have no CAN at all. The nodes that need it get a CAN transceiver (such as the SN65HVD230) wired to their standard ESP32, with a shared two-wire bus between them. See `09-can-bus-additions.md` for the full design.
+Most nodes have no CAN at all. The nodes that need it get a CAN transceiver (such as the SN65HVD230) wired to their standard ESP32, with a shared two-wire bus between them. See [09-can-bus-additions.md](09-can-bus-additions.md) for the full design.
 
 The architecture remains MQTT-first. CAN is a refinement applied to specific node pairs, not a parallel infrastructure tier.
 
@@ -172,14 +172,14 @@ These limits describe the boundary of what Parley addresses. They are not flaws 
 
 After this document, the architecture is described in detail across:
 
-- `02-node-firmware-design.md` — the universal template and partition layout
-- `03-recovery-and-resilience.md` — the autonomous recovery cascade
-- `04-gateway-node.md` — the gateway ESP32 in detail
-- `05-registration-workflow.md` — the conversational integration process
-- `06-role-discovery.md` — emergent role assignment through observation
-- `07-spatial-and-physical-model.md` — physical layout representation
-- `08-collaboration-workflow.md` — the dashboard interface that unifies system visibility, AI conversation, and direct command execution
-- `09-can-bus-additions.md` — targeted CAN coordination for motion-critical peers
-- `10-local-logging.md` — per-node logging that survives firmware rollback for post-failure diagnostics
+- [02-node-firmware-design.md](02-node-firmware-design.md) — the universal template and partition layout
+- [03-recovery-and-resilience.md](03-recovery-and-resilience.md) — the autonomous recovery cascade
+- [04-gateway-node.md](04-gateway-node.md) — the gateway ESP32 in detail
+- [05-registration-workflow.md](05-registration-workflow.md) — the conversational integration process
+- [06-role-discovery.md](06-role-discovery.md) — emergent role assignment through observation
+- [07-spatial-and-physical-model.md](07-spatial-and-physical-model.md) — physical layout representation
+- [08-collaboration-workflow.md](08-collaboration-workflow.md) — the dashboard interface that unifies system visibility, AI conversation, and direct command execution
+- [09-can-bus-additions.md](09-can-bus-additions.md) — targeted CAN coordination for motion-critical peers
+- [10-local-logging.md](10-local-logging.md) — per-node logging that survives firmware rollback for post-failure diagnostics
 
-For new readers: read this document, then `02-node-firmware-design.md` for the per-node design, then `03-recovery-and-resilience.md` for the recovery model. The remaining documents can be read in any order based on interest.
+For new readers: read this document, then [02-node-firmware-design.md](02-node-firmware-design.md) for the per-node design, then [03-recovery-and-resilience.md](03-recovery-and-resilience.md) for the recovery model. The remaining documents can be read in any order based on interest.

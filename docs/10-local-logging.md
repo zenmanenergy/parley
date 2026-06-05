@@ -2,7 +2,7 @@
 
 This document describes Parley's per-node logging subsystem: how logs are written locally on each ESP32, how they survive across firmware rollbacks, and how they enable the AI agent to diagnose problems that crashed the firmware before it could explain itself.
 
-Read `02-node-firmware-design.md` for the universal template and `03-recovery-and-resilience.md` for the rollback architecture this system supports.
+Read [02-node-firmware-design.md](02-node-firmware-design.md) for the universal template and [03-recovery-and-resilience.md](03-recovery-and-resilience.md) for the rollback architecture this system supports.
 
 ## Why Local Logging Matters
 
@@ -14,7 +14,7 @@ The solution is straightforward: write logs locally to a partition that survives
 
 ## Where Logs Live
 
-Each ESP32 has a LittleFS filesystem in its own dedicated partition (see the partition layout in `02-node-firmware-design.md`). LittleFS is not touched by OTA updates — only the app slot partitions are written to during a firmware push. This is the key enabling property: log files written by one firmware version persist when a different firmware version takes over.
+Each ESP32 has a LittleFS filesystem in its own dedicated partition (see the partition layout in [02-node-firmware-design.md](02-node-firmware-design.md)). LittleFS is not touched by OTA updates — only the app slot partitions are written to during a firmware push. This is the key enabling property: log files written by one firmware version persist when a different firmware version takes over.
 
 A portion of the LittleFS partition is reserved for logs:
 

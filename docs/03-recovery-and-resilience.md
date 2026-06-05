@@ -2,7 +2,7 @@
 
 This document describes how Parley nodes recover from software failures without human intervention. The goal is straightforward: a node that crashes, hangs, or receives broken firmware should return to a working state on its own — no cables to plug in, no buttons to press.
 
-Read `01-system-architecture.md` and `02-node-firmware-design.md` first for context on the overall system and how individual nodes are structured.
+Read [01-system-architecture.md](01-system-architecture.md) and [02-node-firmware-design.md](02-node-firmware-design.md) first for context on the overall system and how individual nodes are structured.
 
 ## What the System Tolerates
 
@@ -112,7 +112,7 @@ Parley addresses this gap with local logging: each node writes a structured log 
 
 After a rollback, the recovered firmware reads the failed firmware's log file and publishes its contents to the Pi. The AI agent now has real diagnostic material to reason about — what the failed firmware was doing in the moments before its crash, which subsystem produced the last error, where logging stopped if the firmware silently hung.
 
-See `10-local-logging.md` for the full design of the logging subsystem and post-rollback reporting.
+See [10-local-logging.md](10-local-logging.md) for the full design of the logging subsystem and post-rollback reporting.
 
 ## Layer 3: Boot Counter and Factory Mode
 
@@ -175,7 +175,7 @@ The discipline of never updating factory firmware is what makes the system work.
 
 ### When the Node Cannot Reach the Gateway
 
-Factory firmware needs network connectivity to do its job. If the gateway is down, factory firmware cannot recover. This is acceptable: the gateway is the system's recovery anchor (see `04-gateway-node.md`), and if it is down, the system as a whole is down.
+Factory firmware needs network connectivity to do its job. If the gateway is down, factory firmware cannot recover. This is acceptable: the gateway is the system's recovery anchor (see [04-gateway-node.md](04-gateway-node.md)), and if it is down, the system as a whole is down.
 
 When the gateway returns, nodes in factory mode reconnect automatically and announce themselves. The Pi, when it is up, sees the announcements and can push fresh firmware.
 
