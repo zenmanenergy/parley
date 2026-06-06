@@ -1,0 +1,294 @@
+{
+  "schema_version": "1.0",
+  "description": "Parley part library: integration patterns for hardware peripherals",
+  "parts": {
+    "bno055_imu": {
+      "id": "bno055_imu",
+      "name": "BNO055 9-DOF IMU",
+      "manufacturer": "Bosch",
+      "model": "BNO055",
+      "type": "orientation_3d",
+      "communication": "I2C",
+      "default_address": "0x28",
+      "default_baudrate": null,
+      "capabilities": [
+        "orientation_3d",
+        "angular_velocity_3d",
+        "linear_acceleration_3d",
+        "magnetic_field_3d"
+      ],
+      "recommended_library": "SparkFun_BNO055",
+      "library_version": ">=1.1.6",
+      "wiring": {
+        "power": "3.3V",
+        "ground": "GND",
+        "sda": "GPIO21 (I2C SDA)",
+        "scl": "GPIO22 (I2C SCL)"
+      },
+      "initialization": [
+        "Wire.begin()",
+        "sensor.begin()",
+        "sensor.setMode(OPERATION_MODE_NDOF)",
+        "Wait 500ms for calibration"
+      ],
+      "validation_criteria": {
+        "I2C_bus_detect": true,
+        "heartbeat_topic": "nodes/<id>/data/imu",
+        "expected_fields": ["qx", "qy", "qz", "qw", "gx", "gy", "gz", "ax", "ay", "az"],
+        "sanity_check": "Z-axis acceleration near 1.0g when stationary"
+      },
+      "publish_format": {
+        "topic": "nodes/<node_id>/data/imu",
+        "interval_hz": 5,
+        "payload": {
+          "qx": "float",
+          "qy": "float",
+          "qz": "float",
+          "qw": "float",
+          "gx": "float",
+          "gy": "float",
+          "gz": "float",
+          "ax": "float",
+          "ay": "float",
+          "az": "float"
+        }
+      },
+      "known_gotchas": [
+        "Requires 500ms+ for calibration after power on",
+        "I2C pull-ups may be needed if bus is long",
+        "Mounting orientation matters — calibrate with sensor aligned to robot frame",
+        "Temperature drift — sensor reads change ~0.05g per degree C"
+      ],
+      "last_integrated": "2026-04-15",
+      "integration_count": 3,
+      "task_refs": []
+    },
+    "neo_m9n_gps": {
+      "id": "neo_m9n_gps",
+      "name": "NEO-M9N Multi-Band GNSS",
+      "manufacturer": "u-blox",
+      "model": "NEO-M9N",
+      "type": "position_2d",
+      "communication": "I2C,UART",
+      "default_address": "0x42",
+      "default_baudrate": 38400,
+      "capabilities": [
+        "position_2d",
+        "position_3d",
+        "velocity",
+        "heading"
+      ],
+      "recommended_library": "SparkFun_u-blox_GNSS_v3",
+      "library_version": ">=3.0.0",
+      "wiring": {
+        "power": "3.3V",
+        "ground": "GND",
+        "sda": "GPIO21 (I2C SDA)",
+        "scl": "GPIO22 (I2C SCL)"
+      },
+      "initialization": [
+        "Wire.begin()",
+        "gnss.begin()",
+        "gnss.setI2COutput(COM_TYPE_UBX | COM_TYPE_NMEA)",
+        "gnss.setNavigationFrequency(5) // 5 Hz",
+        "Wait for first fix (up to 30s outdoors, longer indoors)"
+      ],
+      "validation_criteria": {
+        "I2C_bus_detect": true,
+        "heartbeat_topic": "nodes/<id>/data/position",
+        "expected_fields": ["lat", "lon", "accuracy_m"],
+        "sanity_check": "Accuracy should be <10m after fix, location should match physical GPS antenna location"
+      },
+      "publish_format": {
+        "topic": "nodes/<node_id>/data/position",
+        "interval_hz": 5,
+        "payload": {
+          "lat": "double",
+          "lon": "double",
+          "alt_m": "float",
+          "accuracy_m": "float",
+          "heading_deg": "float"
+        }
+      },
+      "known_gotchas": [
+        "Fix time varies: seconds to minutes indoors, <30s outdoors",
+        "Antenna placement matters — keep away from metal, point skyward",
+        "Cold start time: ~30s; hot start: ~5s",
+        "Accuracy reported by sensor may be optimistic; validate against known location",
+        "PDOP (position dilution) matters — low PDOP = high accuracy"
+      ],
+      "last_integrated": "2026-05-10",
+      "integration_count": 2,
+      "task_refs": []
+    },
+    "mg996r_servo": {
+      "id": "mg996r_servo",
+      "name": "MG996R High-Torque Servo Motor",
+      "manufacturer": "MG",
+      "model": "MG996R",
+      "type": "rotational_actuator",
+      "communication": "PWM",
+      "default_address": null,
+      "default_baudrate": null,
+      "capabilities": [
+        "rotational_actuator"
+      ],
+      "recommended_library": "ESP32Servo",
+      "library_version": ">=0.7.0",
+      "wiring": {
+        "power": "6V (separate supply recommended, not 3.3V)",
+        "ground": "GND (common with ESP32)",
+        "signal": "GPIO12 or similar (PWM capable)"
+      },
+      "initialization": [
+        "servo.setPeriodHertz(50)",
+        "servo.attach(GPIO_PIN)",
+        "servo.write(90) // center"
+      ],
+      "validation_criteria": {
+        "pwm_output": true,
+        "heartbeat_topic": "nodes/<id>/status",
+        "physical_validation": "Send 90° command and verify servo moves to center position"
+      },
+      "publish_format": {
+        "topic": "nodes/<node_id>/data/servo",
+        "interval_hz": 10,
+        "payload": {
+          "angle_deg": "float",
+          "angle_target_deg": "float"
+        }
+      },
+      "command_format": {
+        "topic": "nodes/<node_id>/cmd/servo",
+        "payload": {
+          "angle_deg": "float (0-180)"
+        }
+      },
+      "known_gotchas": [
+        "REQUIRES separate 6V power supply — will not work on 3.3V logic rail",
+        "GND must be common between power supply, servo, and ESP32",
+        "PWM signal must be on PWM-capable GPIO (most are, but check datasheet)",
+        "Servo range is 0-180°; 90° is center; going past limits may damage gears",
+        "Torque draw can cause voltage sag — use capacitor (100µF+) near servo power"
+      ],
+      "last_integrated": "2026-05-20",
+      "integration_count": 5,
+      "task_refs": []
+    }
+  },
+  "capability_ontology": {
+    "rotational_actuator": {
+      "description": "Can apply torque to a rotating shaft",
+      "data_received": {
+        "angle_deg": "float",
+        "speed_rpm": "float",
+        "torque_nm": "float"
+      },
+      "data_published": {
+        "angle_deg": "float",
+        "speed_rpm": "float",
+        "position_encoder_ticks": "int"
+      }
+    },
+    "rotational_sensor": {
+      "description": "Measures rotation of a shaft",
+      "data_published": {
+        "angle_deg": "float",
+        "velocity_dps": "float"
+      }
+    },
+    "linear_actuator": {
+      "description": "Can apply force along an axis",
+      "data_received": {
+        "position_m": "float",
+        "force_n": "float"
+      },
+      "data_published": {
+        "position_m": "float"
+      }
+    },
+    "linear_sensor": {
+      "description": "Measures position along an axis",
+      "data_published": {
+        "position_m": "float"
+      }
+    },
+    "position_2d": {
+      "description": "Reports 2D position in some frame",
+      "data_published": {
+        "x_m": "float",
+        "y_m": "float",
+        "confidence_m": "float"
+      }
+    },
+    "position_3d": {
+      "description": "Reports 3D position in some frame",
+      "data_published": {
+        "x_m": "float",
+        "y_m": "float",
+        "z_m": "float",
+        "confidence_m": "float"
+      }
+    },
+    "orientation_3d": {
+      "description": "Reports 3D orientation (quaternion)",
+      "data_published": {
+        "qx": "float",
+        "qy": "float",
+        "qz": "float",
+        "qw": "float"
+      }
+    },
+    "angular_velocity_3d": {
+      "description": "Reports rotation rate around 3 axes (rad/s)",
+      "data_published": {
+        "gx": "float",
+        "gy": "float",
+        "gz": "float"
+      }
+    },
+    "linear_acceleration_3d": {
+      "description": "Reports linear acceleration along 3 axes (m/s²)",
+      "data_published": {
+        "ax": "float",
+        "ay": "float",
+        "az": "float"
+      }
+    },
+    "magnetic_field_3d": {
+      "description": "Reports magnetic field vector (µT)",
+      "data_published": {
+        "bx": "float",
+        "by": "float",
+        "bz": "float"
+      }
+    },
+    "pressure": {
+      "description": "Reports atmospheric pressure",
+      "data_published": {
+        "pressure_pa": "float"
+      }
+    },
+    "temperature": {
+      "description": "Reports temperature",
+      "data_published": {
+        "temp_c": "float"
+      }
+    },
+    "range_1d": {
+      "description": "Reports distance to nearest obstacle in one direction",
+      "data_published": {
+        "distance_m": "float"
+      }
+    },
+    "image_2d": {
+      "description": "Reports 2D pixel data (camera image)",
+      "data_published": {
+        "image_base64": "string",
+        "width": "int",
+        "height": "int",
+        "format": "string"
+      }
+    }
+  }
+}

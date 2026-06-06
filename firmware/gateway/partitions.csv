@@ -1,0 +1,26 @@
+# Parley gateway partition table — ESP32-S3 N16R8 (16MB flash)
+#
+# The gateway uses the same A/B/factory scheme as peripheral nodes (per spec).
+# The difference is that the gateway's factory firmware recovers via USB, not
+# WiFi — the Pi is physically attached and can push new firmware over the USB
+# link even when the AP is down.
+#
+# The Pi can also hard-flash the gateway via esptool.py over USB if factory
+# firmware itself fails, which is not possible for peripheral nodes. So the
+# factory partition can be smaller and the firmware simpler.
+#
+# Layout:
+#   NVS          24KB  — AP config, Pi IP, provisioned node registry
+#   OTA data      8KB  — tracks which slot is active
+#   Factory app    1MB  — minimal USB-recovery firmware; never updated OTA
+#   OTA slot 0   6.75MB — active gateway firmware
+#   OTA slot 1   6.75MB — inactive slot for OTA updates
+#   LittleFS     ~1.4MB — persistent node registry file, logs
+
+# Name,    Type,  SubType,  Offset,    Size
+nvs,       data,  nvs,      0x9000,    0x6000,
+otadata,   data,  ota,      0xf000,    0x2000,
+factory,   app,   factory,  0x20000,   0x100000,
+ota_0,     app,   ota_0,    0x120000,  0x6c0000,
+ota_1,     app,   ota_1,    0x7e0000,  0x6c0000,
+littlefs,  data,  spiffs,   0xea0000,  0x160000,

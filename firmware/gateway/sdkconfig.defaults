@@ -1,0 +1,16 @@
+# Parley gateway sdkconfig overrides
+# Applied at build time by PlatformIO via board_build.sdkconfig_options.
+# These enable the lwIP features required for the gateway to route traffic
+# between the peripheral WiFi AP and the Pi's USB network interface.
+
+# Allow lwIP to forward IP packets between interfaces (WiFi AP <-> USB)
+CONFIG_LWIP_IP_FORWARD=y
+
+# Enable IPv4 NAT so peripheral nodes (192.168.4.x) can reach the Pi
+# through the gateway's USB interface without needing static routes on each node
+CONFIG_LWIP_IPV4_NAPT=y
+
+# TinyUSB device stack — required for CDC-ECM USB networking
+# The gateway presents itself as a USB Ethernet adapter to the Pi
+CONFIG_TINYUSB_ENABLED=y
+CONFIG_TINYUSB_NET_ENABLED=y

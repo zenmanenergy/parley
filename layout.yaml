@@ -1,0 +1,100 @@
+# Parley Spatial and Physical Layout
+# 
+# Describes where each peripheral is mounted on the robot, how it is oriented,
+# and its kinematic/functional role.
+# 
+# Coordinate system (robot frame):
+#   +X forward (direction robot considers "ahead")
+#   +Y left (perpendicular to forward)
+#   +Z up (perpendicular to ground when upright)
+#
+# This is a right-handed coordinate system, matching ROS convention.
+
+robot:
+  name: "Your Robot Name"
+  frame: "chassis_center"
+  description: "Edit this file to describe your robot's physical layout"
+
+peripherals:
+  # Example IMU node
+  imu_01:
+    type: "orientation_3d"
+    description: "9-DOF IMU for orientation tracking"
+    capabilities: ["orientation_3d", "angular_velocity_3d", "linear_acceleration_3d"]
+    frame:
+      parent: "robot"
+      position: [0.0, 0.0, 0.05]    # 5 cm above chassis center
+      rotation: [0, 0, 0]           # No rotation (aligned with robot frame)
+      precision: "medium (measured with caliper)"
+    mounted_on: "top plate, center"
+    notes: "Mounting orientation matches robot frame axes"
+
+  # Example GPS node
+  gps_01:
+    type: "position_2d"
+    description: "GNSS receiver for outdoor positioning"
+    capabilities: ["position_2d"]
+    frame:
+      parent: "robot"
+      position: [0.1, 0.0, 0.30]    # 10 cm forward, 30 cm high (antenna clearance)
+      rotation: [0, 0, 0]           # Antenna pointing up
+      precision: "coarse (eye estimate)"
+    mounted_on: "mast, forward side"
+    notes: "Antenna must point skyward for GPS reception; keep clear of metal"
+
+  # Example left wheel
+  left_wheel:
+    type: "rotational_actuator"
+    description: "Left drive wheel (motor + encoder)"
+    capabilities: ["rotational_actuator"]
+    frame:
+      parent: "robot"
+      position: [0.0, 0.20, 0.0]    # 20 cm to the left of center
+      rotation_axis: [0, 1, 0]      # Rotates around Y axis (lateral axis)
+    wheel_radius: 0.05              # 5 cm radius
+    encoder_ticks_per_revolution: 1024
+    gear_ratio: 20.0                # 20:1 reduction
+    mounted_on: "left side, floor level"
+    notes: "Paired with right_wheel; both should be symmetric for straight-line tracking"
+
+  # Example right wheel
+  right_wheel:
+    type: "rotational_actuator"
+    description: "Right drive wheel (motor + encoder)"
+    capabilities: ["rotational_actuator"]
+    frame:
+      parent: "robot"
+      position: [0.0, -0.20, 0.0]   # 20 cm to the right of center
+      rotation_axis: [0, 1, 0]      # Rotates around Y axis (lateral axis)
+    wheel_radius: 0.05              # 5 cm radius
+    encoder_ticks_per_revolution: 1024
+    gear_ratio: 20.0                # 20:1 reduction
+    mounted_on: "right side, floor level"
+    notes: "Verify rotation direction matches left_wheel (both forward = chassis moves +X)"
+
+# Kinematic models (optional, for robots with articulated parts)
+# kinematics:
+#   differential_drive:
+#     wheelbase: 0.40  # distance between left and right wheels
+#     wheel_radius: 0.05
+#     track_width: 0.20  # perpendicular distance from center to wheel
+
+# World frame information (optional, for navigation)
+world_frame:
+  type: "ENU"  # East-North-Up (standard for outdoor GPS robots)
+  origin_description: "GPS starting location (update when deployed in new location)"
+  notes: "World frame +Z is up; +X is east; +Y is north"
+
+# Mounting conventions used in this robot:
+mounting_conventions:
+  IMUs: "Mount with axes aligned to robot frame when possible; document rotation if rotated"
+  cameras: "Document optical axis direction (forward vs down vs other)"
+  wheels: "Document rotation axis and what positive rotation means (right-hand rule)"
+  GPS_antenna: "Mount with patch facing up; away from metal for best reception"
+
+# Change log (document physical modifications here):
+change_log:
+  - date: "2026-06-06"
+    change: "Initial layout file created"
+    author: "you"
+    impact: "New robot baseline"
