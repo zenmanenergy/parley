@@ -1644,80 +1644,89 @@ const codeEditState = {
 	currentCode: '',
 };
 
-document.getElementById('code-edit-btn').addEventListener('click', () => {
-	const viewer = document.getElementById('code-viewer');
-	const editor = document.getElementById('code-editor');
-	const editBtn = document.getElementById('code-edit-btn');
-	const saveBtn = document.getElementById('code-save-btn');
-	const cancelBtn = document.getElementById('code-cancel-btn');
+const codeEditBtn = document.getElementById('code-edit-btn');
+if (codeEditBtn) {
+	codeEditBtn.addEventListener('click', () => {
+		const viewer = document.getElementById('code-viewer');
+		const editor = document.getElementById('code-editor');
+		const editBtn = document.getElementById('code-edit-btn');
+		const saveBtn = document.getElementById('code-save-btn');
+		const cancelBtn = document.getElementById('code-cancel-btn');
 
-	if (!codeEditState.editing) {
-		// Enter edit mode
-		codeEditState.originalCode = viewer.textContent;
-		codeEditState.currentCode = codeEditState.originalCode;
-		editor.value = codeEditState.currentCode;
-		
-		viewer.classList.add('hidden');
-		editor.classList.remove('hidden');
-		editBtn.classList.add('hidden');
-		saveBtn.classList.remove('hidden');
-		cancelBtn.classList.remove('hidden');
-		editor.focus();
-		codeEditState.editing = true;
-	}
-});
-
-document.getElementById('code-save-btn').addEventListener('click', () => {
-	const viewer = document.getElementById('code-viewer');
-	const editor = document.getElementById('code-editor');
-	const editBtn = document.getElementById('code-edit-btn');
-	const saveBtn = document.getElementById('code-save-btn');
-	const cancelBtn = document.getElementById('code-cancel-btn');
-
-	// Update the displayed code
-	codeEditState.currentCode = editor.value;
-	viewer.textContent = codeEditState.currentCode;
-	
-	// Update the last code block in the conversation so compile uses edited version
-	const conv = conversations[state.activeConvId];
-	if (conv && conv._lastCodeBlocks && conv._lastCodeBlocks.length > 0) {
-		const lastCppBlock = conv._lastCodeBlocks.find(b => b.lang === 'cpp' || b.lang === 'c');
-		if (lastCppBlock) {
-			lastCppBlock.code = codeEditState.currentCode;
-			lastCppBlock.rawCode = codeEditState.currentCode;
+		if (!codeEditState.editing) {
+			// Enter edit mode
+			codeEditState.originalCode = viewer.textContent;
+			codeEditState.currentCode = codeEditState.originalCode;
+			editor.value = codeEditState.currentCode;
+			
+			viewer.classList.add('hidden');
+			editor.classList.remove('hidden');
+			editBtn.classList.add('hidden');
+			saveBtn.classList.remove('hidden');
+			cancelBtn.classList.remove('hidden');
+			editor.focus();
+			codeEditState.editing = true;
 		}
-	}
+	});
+}
 
-	// Exit edit mode
-	editor.classList.add('hidden');
-	viewer.classList.remove('hidden');
-	editBtn.classList.remove('hidden');
-	saveBtn.classList.add('hidden');
-	cancelBtn.classList.add('hidden');
-	codeEditState.editing = false;
-	
-	appendChatMessage(state.activeConvId, 'human', 'I\'ve edited the code. Ready to compile when you are.');
-});
+const codeSaveBtn = document.getElementById('code-save-btn');
+if (codeSaveBtn) {
+	codeSaveBtn.addEventListener('click', () => {
+		const viewer = document.getElementById('code-viewer');
+		const editor = document.getElementById('code-editor');
+		const editBtn = document.getElementById('code-edit-btn');
+		const saveBtn = document.getElementById('code-save-btn');
+		const cancelBtn = document.getElementById('code-cancel-btn');
 
-document.getElementById('code-cancel-btn').addEventListener('click', () => {
-	const viewer = document.getElementById('code-viewer');
-	const editor = document.getElementById('code-editor');
-	const editBtn = document.getElementById('code-edit-btn');
-	const saveBtn = document.getElementById('code-save-btn');
-	const cancelBtn = document.getElementById('code-cancel-btn');
+		// Update the displayed code
+		codeEditState.currentCode = editor.value;
+		viewer.textContent = codeEditState.currentCode;
+		
+		// Update the last code block in the conversation so compile uses edited version
+		const conv = conversations[state.activeConvId];
+		if (conv && conv._lastCodeBlocks && conv._lastCodeBlocks.length > 0) {
+			const lastCppBlock = conv._lastCodeBlocks.find(b => b.lang === 'cpp' || b.lang === 'c');
+			if (lastCppBlock) {
+				lastCppBlock.code = codeEditState.currentCode;
+				lastCppBlock.rawCode = codeEditState.currentCode;
+			}
+		}
 
-	// Discard changes
-	codeEditState.currentCode = codeEditState.originalCode;
-	editor.value = codeEditState.originalCode;
+		// Exit edit mode
+		editor.classList.add('hidden');
+		viewer.classList.remove('hidden');
+		editBtn.classList.remove('hidden');
+		saveBtn.classList.add('hidden');
+		cancelBtn.classList.add('hidden');
+		codeEditState.editing = false;
+		
+		appendChatMessage(state.activeConvId, 'human', 'I\'ve edited the code. Ready to compile when you are.');
+	});
+}
 
-	// Exit edit mode
-	editor.classList.add('hidden');
-	viewer.classList.remove('hidden');
-	editBtn.classList.remove('hidden');
-	saveBtn.classList.add('hidden');
-	cancelBtn.classList.add('hidden');
-	codeEditState.editing = false;
-});
+const codeCancelBtn = document.getElementById('code-cancel-btn');
+if (codeCancelBtn) {
+	codeCancelBtn.addEventListener('click', () => {
+		const viewer = document.getElementById('code-viewer');
+		const editor = document.getElementById('code-editor');
+		const editBtn = document.getElementById('code-edit-btn');
+		const saveBtn = document.getElementById('code-save-btn');
+		const cancelBtn = document.getElementById('code-cancel-btn');
+
+		// Discard changes
+		codeEditState.currentCode = codeEditState.originalCode;
+		editor.value = codeEditState.originalCode;
+
+		// Exit edit mode
+		editor.classList.add('hidden');
+		viewer.classList.remove('hidden');
+		editBtn.classList.remove('hidden');
+		saveBtn.classList.add('hidden');
+		cancelBtn.classList.add('hidden');
+		codeEditState.editing = false;
+	});
+}
 
 // ---------------------------------------------------------------------------
 // Heartbeat ping to keep connection alive

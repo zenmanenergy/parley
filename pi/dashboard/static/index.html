@@ -139,6 +139,18 @@
 					</div>
 				</div>
 
+				<div class="tab-content hidden" id="tab-code">
+					<div class="code-editor-panel">
+						<div class="code-editor-header">
+							<button class="code-edit-btn" id="code-edit-btn" title="Edit code">Edit</button>
+							<button class="code-save-btn hidden" id="code-save-btn" title="Save changes">Save</button>
+							<button class="code-cancel-btn hidden" id="code-cancel-btn" title="Cancel editing">Cancel</button>
+						</div>
+						<pre class="code-viewer" id="code-viewer"><code>// No code available</code></pre>
+						<textarea class="code-editor hidden" id="code-editor" rows="20" placeholder="// Edit code here"></textarea>
+					</div>
+				</div>
+
 				<div class="tab-content hidden" id="tab-map">
 					<div class="map-view">
 						<svg id="spatial-map" width="100%" height="100%" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius)">

@@ -1200,6 +1200,70 @@ button {
 }
 .anomaly-dismiss:hover { color: var(--red); }
 
+/* Code editor panel */
+.code-editor-panel {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	gap: 1rem;
+}
+
+.code-editor-header {
+	display: flex;
+	gap: 0.5rem;
+	padding: 0.5rem;
+	border-bottom: 1px solid var(--border);
+}
+
+.code-edit-btn, .code-save-btn, .code-cancel-btn {
+	padding: 0.5rem 1rem;
+	background: var(--primary);
+	color: white;
+	border: none;
+	border-radius: var(--radius);
+	cursor: pointer;
+	font-size: 12px;
+	font-weight: 600;
+}
+
+.code-edit-btn:hover { background: var(--primary-hover); }
+.code-save-btn:hover { background: var(--green); }
+.code-cancel-btn:hover { background: var(--red); }
+
+.code-viewer {
+	flex: 1;
+	overflow: auto;
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 1rem;
+	margin: 0;
+	font-family: 'Monaco', 'Courier New', monospace;
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--text);
+	white-space: pre-wrap;
+	word-wrap: break-word;
+}
+
+.code-editor {
+	flex: 1;
+	padding: 1rem;
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	font-family: 'Monaco', 'Courier New', monospace;
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--text);
+	resize: none;
+	font-size: 12px;
+}
+
+.code-editor.hidden, .code-viewer.hidden {
+	display: none;
+}
+
 /* ===== Code diff view (right panel Code tab) ===== */
 .diff-area {
 	padding: 8px;

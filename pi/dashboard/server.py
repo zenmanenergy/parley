@@ -47,6 +47,13 @@ except ImportError:
 import websockets
 from websockets.asyncio.server import ServerConnection
 
+# Load .env file if present
+try:
+	from dotenv import load_dotenv
+	load_dotenv()
+except ImportError:
+	pass  # dotenv optional for development
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
@@ -871,15 +878,26 @@ async def handle_ws_message(ws: ServerConnection, msg: dict):
         }))
 
 
+async def run_ws_server():
+    """Start the WebSocket server and background tasks."""
     global _loop
     _loop = asyncio.get_running_loop()
 
     log.info("WebSocket server listening on ws://0.0.0.0:%d", WS_PORT)
-    async with websockets.serve(handle_ws, "0.0.0.0", WS_PORT):
-        # Age-out check every 30s
-        while True:
-            await asyncio.sleep(30)
-            registry.mark_offline()
+    try:
+        async with websockets.serve(handle_ws, "0.0.0.0", WS_PORT, reuse_address=True):
+            # Age-out check every 30s
+            while True:
+                await asyncio.sleep(30)
+                registry.mark_offline()
+    except OSError as e:
+        if "Address already in use" in str(e) or "10048" in str(e):
+            log.error("Port %d is already in use. Try:", WS_PORT)
+            log.error("  - Change WS_PORT environment variable: export WS_PORT=8766")
+            log.error("  - Or kill existing server: lsof -i :%d | grep -v PID | awk '{print $2}' | xargs kill", WS_PORT)
+        else:
+            log.error("Failed to start WebSocket server: %s", e)
+        raise
 
 
 # ---------------------------------------------------------------------------
