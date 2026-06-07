@@ -432,5 +432,181 @@ class TestPushOTA:
 			# Check that publish was called (if mqtt_client exists)
 
 
+class TestNodeRegistry:
+	"""Tests for NodeRegistry class - node state management."""
+
+	def test_upsert_new_node(self):
+		"""Upsert should create new node with mac and first_seen."""
+		registry = server.NodeRegistry()
+		result = registry.upsert("aa:bb:cc:dd:ee:ff", {"status": "online"})
+		assert result["mac"] == "aa:bb:cc:dd:ee:ff"
+		assert "first_seen" in result
+		assert result["status"] == "online"
+
+	def test_upsert_updates_existing_node(self):
+		"""Upsert should update existing node."""
+		registry = server.NodeRegistry()
+		first_upsert = registry.upsert("aa:bb:cc:dd:ee:ff", {"status": "online"})
+		first_seen = first_upsert["first_seen"]
+		
+		time.sleep(0.01)  # Ensure time passes
+		second_upsert = registry.upsert("aa:bb:cc:dd:ee:ff", {"status": "offline", "version": "1.0"})
+		
+		assert second_upsert["mac"] == "aa:bb:cc:dd:ee:ff"
+		assert second_upsert["first_seen"] == first_seen  # Should not change
+		assert second_upsert["status"] == "offline"
+		assert second_upsert["version"] == "1.0"
+		assert second_upsert["last_seen"] > first_upsert["last_seen"]
+
+	def test_update_by_node_id_existing_node(self):
+		"""update_by_node_id should find and update node by node_id."""
+		registry = server.NodeRegistry()
+		registry.upsert("aa:bb:cc:dd:ee:ff", {"node_id": "motor_1", "status": "online"})
+		
+		registry.update_by_node_id("motor_1", {"battery": "85%", "temp": 32})
+		
+		nodes = registry.all()
+		assert len(nodes) == 1
+		assert nodes[0]["node_id"] == "motor_1"
+		assert nodes[0]["battery"] == "85%"
+		assert nodes[0]["temp"] == 32
+
+	def test_update_by_node_id_creates_if_not_found(self):
+		"""update_by_node_id should create node if not found."""
+		registry = server.NodeRegistry()
+		registry.update_by_node_id("new_node", {"status": "factory"})
+		
+		nodes = registry.all()
+		assert len(nodes) == 1
+		assert nodes[0]["node_id"] == "new_node"
+		assert nodes[0]["status"] == "factory"
+
+	def test_all_returns_sorted_list(self):
+		"""all() should return nodes sorted by node_id."""
+		registry = server.NodeRegistry()
+		registry.upsert("aa:bb:cc:dd:ee:ff", {"node_id": "z_node"})
+		registry.upsert("11:22:33:44:55:66", {"node_id": "a_node"})
+		registry.upsert("99:88:77:66:55:44", {"node_id": "m_node"})
+		
+		nodes = registry.all()
+		node_ids = [n["node_id"] for n in nodes]
+		assert node_ids == ["a_node", "m_node", "z_node"]
+
+	def test_connectivity_online(self):
+		"""Recent nodes with online status should show connectivity=online."""
+		registry = server.NodeRegistry()
+		registry.upsert("aa:bb:cc:dd:ee:ff", {"status": "online", "last_seen": time.time()})
+		
+		nodes = registry.all()
+		assert nodes[0]["connectivity"] == "online"
+
+	def test_connectivity_offline_after_timeout(self):
+		"""Nodes not seen in >120s should show connectivity=offline."""
+		registry = server.NodeRegistry()
+		old_time = time.time() - 200  # 200 seconds ago
+		registry.upsert("aa:bb:cc:dd:ee:ff", {"status": "online"})
+		# Manually set last_seen to old time (simulating stale node)
+		registry._nodes["aa:bb:cc:dd:ee:ff"]["last_seen"] = old_time
+		
+		nodes = registry.all()
+		assert nodes[0]["connectivity"] == "offline"
+
+	def test_connectivity_factory_status(self):
+		"""Nodes with factory/needs_provisioning status should show connectivity=factory."""
+		registry = server.NodeRegistry()
+		registry.upsert("aa:bb:cc:dd:ee:ff", {"status": "factory", "last_seen": time.time()})
+		registry.upsert("11:22:33:44:55:66", {"status": "needs_provisioning", "last_seen": time.time()})
+		
+		nodes = registry.all()
+		nodes_by_mac = {n.get("mac"): n for n in nodes}
+		assert nodes_by_mac["aa:bb:cc:dd:ee:ff"]["connectivity"] == "factory"
+		assert nodes_by_mac["11:22:33:44:55:66"]["connectivity"] == "factory"
+
+	def test_mark_offline_ages_out_nodes(self):
+		"""mark_offline() should age nodes not seen in >120s."""
+		registry = server.NodeRegistry()
+		old_time = time.time() - 200
+		recent_time = time.time()
+		
+		registry.upsert("aa:bb:cc:dd:ee:ff", {"status": "online"})
+		registry.upsert("11:22:33:44:55:66", {"status": "online"})
+		
+		# Manually set last_seen for old node (simulating stale node)
+		registry._nodes["aa:bb:cc:dd:ee:ff"]["last_seen"] = old_time
+		
+		registry.mark_offline()
+		nodes = registry.all()
+		nodes_by_mac = {n.get("mac"): n for n in nodes}
+		
+		assert nodes_by_mac["aa:bb:cc:dd:ee:ff"]["connectivity"] == "offline"
+		assert nodes_by_mac["11:22:33:44:55:66"]["connectivity"] == "online"
+
+	def test_multiple_nodes(self):
+		"""Registry should handle multiple independent nodes."""
+		registry = server.NodeRegistry()
+		
+		# Add multiple nodes
+		for i in range(5):
+			mac = f"aa:bb:cc:dd:ee:{i:02x}"
+			registry.upsert(mac, {"node_id": f"node_{i}", "status": "online"})
+		
+		nodes = registry.all()
+		assert len(nodes) == 5
+		assert all("node_id" in n for n in nodes)
+		assert all("mac" in n for n in nodes)
+
+	def test_thread_safety_concurrent_upserts(self):
+		"""Registry should handle concurrent upserts safely."""
+		import threading
+		
+		registry = server.NodeRegistry()
+		errors = []
+		
+		def upsert_node(mac, node_id):
+			try:
+				registry.upsert(mac, {"node_id": node_id, "status": "online"})
+			except Exception as e:
+				errors.append(e)
+		
+		threads = []
+		for i in range(10):
+			mac = f"aa:bb:cc:dd:ee:{i:02x}"
+			t = threading.Thread(target=upsert_node, args=(mac, f"node_{i}"))
+			threads.append(t)
+			t.start()
+		
+		for t in threads:
+			t.join()
+		
+		assert len(errors) == 0
+		assert len(registry.all()) == 10
+
+	def test_upsert_preserves_existing_fields(self):
+		"""Upsert should preserve fields not in the update dict."""
+		registry = server.NodeRegistry()
+		registry.upsert("aa:bb:cc:dd:ee:ff", {"node_id": "motor_1", "status": "online", "version": "1.0"})
+		
+		# Upsert with partial update
+		registry.upsert("aa:bb:cc:dd:ee:ff", {"battery": "85%"})
+		
+		nodes = registry.all()
+		assert nodes[0]["node_id"] == "motor_1"
+		assert nodes[0]["status"] == "online"
+		assert nodes[0]["version"] == "1.0"
+		assert nodes[0]["battery"] == "85%"
+
+	def test_all_returns_copy_not_reference(self):
+		"""all() should return copies so modifications don't affect internal state."""
+		registry = server.NodeRegistry()
+		registry.upsert("aa:bb:cc:dd:ee:ff", {"node_id": "motor_1", "status": "online"})
+		
+		nodes = registry.all()
+		nodes[0]["status"] = "hacked"  # Try to modify
+		
+		# Check that internal state is unchanged
+		nodes2 = registry.all()
+		assert nodes2[0]["status"] == "online"
+
+
 if __name__ == "__main__":
 	pytest.main([__file__, "-v"])
