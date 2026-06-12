@@ -4,6 +4,7 @@
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Parley Dashboard</title>
+	<link rel="icon" type="image/svg+xml" href="favicon.svg">
 	<link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -32,11 +33,32 @@
 		<div class="panel-header">
 			<h2>System</h2>
 			<span class="node-count" id="node-count">0 nodes</span>
+			<button class="history-toggle-btn" id="history-toggle-btn" title="View past conversations" onclick="document.getElementById('node-list').classList.toggle('hidden'); document.getElementById('history-section').classList.toggle('hidden'); if (!document.getElementById('node-list').classList.contains('hidden')) loadConversationHistory();">History</button>
 		</div>
 
 		<!-- Node list -->
 		<div class="node-list" id="node-list">
 			<!-- Populated by JS -->
+		</div>
+
+		<!-- History section -->
+		<div id="history-section" class="hidden">
+			<div class="history-search">
+				<input type="text" id="history-search-query" placeholder="Search conversations..." 
+					onkeyup="searchConversations(document.getElementById('history-search-query').value)">
+				<select id="history-filter-kind" onchange="searchConversations(document.getElementById('history-search-query').value, this.value)">
+					<option value="">All kinds</option>
+					<option value="register">Register</option>
+					<option value="debug">Debug</option>
+					<option value="tune">Tune</option>
+					<option value="refactor">Refactor</option>
+					<option value="investigate">Investigate</option>
+					<option value="other">Other</option>
+				</select>
+			</div>
+			<div class="history-list" id="history-list">
+				<div class="empty-state">No conversations yet</div>
+			</div>
 		</div>
 
 		<!-- Anomaly feed -->
@@ -142,12 +164,11 @@
 				<div class="tab-content hidden" id="tab-code">
 					<div class="code-editor-panel">
 						<div class="code-editor-header">
-							<button class="code-edit-btn" id="code-edit-btn" title="Edit code">Edit</button>
-							<button class="code-save-btn hidden" id="code-save-btn" title="Save changes">Save</button>
-							<button class="code-cancel-btn hidden" id="code-cancel-btn" title="Cancel editing">Cancel</button>
+							<button class="send-btn" id="code-deploy-btn" style="background: var(--green); color: #000; padding: 6px 14px; font-weight: 600;" title="Deploy to node">Deploy</button>
 						</div>
-						<pre class="code-viewer" id="code-viewer"><code>// No code available</code></pre>
-						<textarea class="code-editor hidden" id="code-editor" rows="20" placeholder="// Edit code here"></textarea>
+						<div id="code-content-area">
+							<!-- Node source code or diffs will be displayed here -->
+						</div>
 					</div>
 				</div>
 
@@ -166,17 +187,42 @@
 
 	</section>
 
-	<!-- ===== Right: Context & Tasks ===== -->
+	<!-- Resizable divider between center and right panels -->
+	<div class="cp-divider" id="cp-divider"></div>
+
+	<!-- ===== Right: Chat & Tasks ===== -->
 	<section class="panel panel-right" id="panel-right">
 
 		<!-- Right panel tabs -->
 		<div class="rp-tabbar">
-			<button class="rp-tab active" data-rp="rp-tasks">Tasks</button>
+			<button class="rp-tab active" data-rp="rp-chat">Chat</button>
+			<button class="rp-tab" data-rp="rp-tasks">Tasks</button>
 			<button class="rp-tab" data-rp="rp-context">Context</button>
-			<button class="rp-tab" data-rp="rp-code">Code <span class="rp-code-badge hidden" id="rp-code-badge">!</span></button>
 		</div>
 
-		<div class="rp-pane" id="rp-tasks">
+		<!-- Chat pane with conversation selector -->
+		<div class="rp-pane" id="rp-chat">
+			<div style="padding: 10px; border-bottom: 1px solid var(--border);">
+				<label style="font-size: 11px; color: var(--text-mute); display: block; margin-bottom: 6px;">Load past conversation:</label>
+				<select id="past-conv-selector" style="
+					width: 100%;
+					padding: 6px 8px;
+					background: var(--surface);
+					border: 1px solid var(--border);
+					color: var(--text);
+					border-radius: 4px;
+					font-size: 11px;
+					cursor: pointer;
+				">
+					<option value="">Select a conversation...</option>
+				</select>
+			</div>
+			<div id="rp-chat-area" style="flex: 1; overflow-y: auto; padding: 10px;">
+				<div class="empty-state">Select a conversation or start chatting</div>
+			</div>
+		</div>
+
+		<div class="rp-pane hidden" id="rp-tasks">
 			<div class="task-list" id="task-list">
 				<div class="empty-state">No tasks yet</div>
 			</div>
@@ -188,14 +234,11 @@
 			</div>
 		</div>
 
-		<div class="rp-pane hidden" id="rp-code">
-			<div class="diff-area" id="diff-area">
-				<div class="empty-state">No pending code changes</div>
-			</div>
-		</div>
+		<!-- Resizable divider -->
+		<div class="rp-divider" id="rp-divider"></div>
 
 		<!-- MQTT stream -->
-		<div class="right-footer">
+		<div class="right-footer" id="right-footer">
 			<div class="section-label">MQTT Stream <button class="clear-btn" id="clear-activity">Clear</button></div>
 			<div class="activity-feed" id="activity-feed"></div>
 		</div>

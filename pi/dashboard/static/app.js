@@ -51,6 +51,8 @@ function connect() {
 		wsStatus.className = 'ws-status connected';
 		clearTimeout(wsReconnectTimer);
 		ws.send(JSON.stringify({ type: 'get_nodes' }));
+		// Load conversation history
+		loadConversationHistory();
 	};
 
 	ws.onclose = () => {
@@ -196,6 +198,33 @@ function handleMessage(msg) {
 			// Render spatial map if a node is currently selected
 			if (state.selectedNodeId) {
 				renderSpatialMap(state.selectedNodeId);
+			}
+			break;
+
+		// ------------------------------------------------------------------
+		// Conversation history
+		// ------------------------------------------------------------------
+		case 'history':
+			conversationHistory = msg.conversations || [];
+			renderConversationHistory(conversationHistory);
+			break;
+
+		case 'search_results':
+			if (msg.conversations) {
+				conversationHistory = msg.conversations;
+				renderConversationHistory(conversationHistory);
+			}
+			break;
+
+		case 'conversation':
+			if (msg.data) {
+				displayPastConversation(msg.data);
+			}
+			break;
+
+		case 'node_files':
+			if (msg.files) {
+				displayNodeFiles(msg.node_id, msg.files, msg.selected_file);
 			}
 			break;
 
@@ -371,7 +400,7 @@ function onCompileDone(msg) {
 	if (logEl) {
 		const summary = document.createElement('div');
 		summary.style.cssText = `font-weight:600;margin-top:8px;color:${msg.success ? 'var(--green)' : 'var(--red)'}`;
-		summary.textContent = msg.success ? 'Build succeeded.' : 'Build FAILED.';
+		summary.textContent = msg.success ? '✓ Build succeeded!' : '✗ Build FAILED.';
 		logEl.appendChild(summary);
 	}
 
@@ -382,13 +411,36 @@ function onCompileDone(msg) {
 			el.className = 'chat-msg ai';
 			const conv = conversations[msg.conv_id];
 			const nodeId = (conv && conv.nodeId) ? escHtml(conv.nodeId) : '';
+			
+			const binFileName = msg.bin_url.split('/').pop();
+			
 			el.innerHTML = `
 				<div class="chat-msg-bubble">
-					Build succeeded. Firmware: <code>${escHtml(msg.bin_url)}</code>
-					${nodeId ? `<div class="compile-actions" style="margin-top:8px">
-						<button class="send-btn" style="padding:4px 12px;font-size:12px"
-							onclick="triggerOta('${msg.conv_id}','${nodeId}','${escHtml(msg.bin_url)}')">
-							Push OTA to ${nodeId}
+					<div style="margin-bottom:8px">
+						<strong>✓ Build succeeded</strong><br>
+						<span style="color:var(--text-mute);font-size:11px">Firmware: ${escHtml(binFileName)}</span>
+					</div>
+					${nodeId ? `<div style="
+						background: rgba(63, 185, 80, 0.1);
+						border: 1px solid var(--green);
+						border-radius: 6px;
+						padding: 10px;
+						display: flex;
+						align-items: center;
+						gap: 10px;
+					">
+						<span style="flex:1; font-size:12px; color:var(--green)">Ready to deploy?</span>
+						<button class="send-btn" style="
+							padding: 6px 14px;
+							font-size: 12px;
+							background: var(--green);
+							color: #000;
+							border: none;
+							border-radius: 4px;
+							font-weight: 600;
+							cursor: pointer;
+						" onclick="triggerOta('${msg.conv_id}','${nodeId}','${escHtml(msg.bin_url)}')">
+							Deploy to ${nodeId}
 						</button>
 					</div>` : ''}
 				</div>
@@ -454,8 +506,29 @@ function triggerAiFix(convId, envName, errorLines) {
 }
 
 function triggerOta(convId, nodeId, binUrl) {
-	if (!confirm(`Push firmware to ${nodeId}? The node will reboot.`)) return;
+	if (!confirm(`Deploy firmware to ${nodeId}? The node will download, reboot, and run the new version.`)) return;
+	
 	send({ type: 'push_ota', node_id: nodeId, bin_url: binUrl });
+	
+	// Show deployment in progress message
+	const convEl = document.getElementById(`chat-${convId}`);
+	if (convEl) {
+		const el = document.createElement('div');
+		el.className = 'chat-msg ai';
+		el.innerHTML = `
+			<div class="chat-msg-bubble">
+				<div style="display:flex; align-items:center; gap:8px">
+					<span style="color:var(--yellow);font-size:12px">⟳ Deploying to ${escHtml(nodeId)}...</span>
+					<span style="font-size:10px;color:var(--text-mute)">Pushing firmware URL to node</span>
+				</div>
+			</div>
+			<div class="chat-msg-meta">Deploy</div>
+		`;
+		convEl.appendChild(el);
+		convEl.scrollTop = convEl.scrollHeight;
+	}
+	
+	pushActivity('deploy', nodeId, 'OTA started');
 }
 
 // ---------------------------------------------------------------------------
@@ -553,6 +626,17 @@ function selectNode(key) {
 	addNodeContext(node.node_id || node.mac || key);
 
 	renderNodeDetail(node);
+	
+	// Switch to Code tab by default
+	document.querySelectorAll('.tab-btn').forEach(b => {
+		b.classList.toggle('active', b.dataset.tab === 'tab-code');
+	});
+	document.querySelectorAll('.tab-content').forEach(p => {
+		p.classList.toggle('hidden', p.id !== 'tab-code');
+	});
+	
+	// Request source files for this node
+	requestNodeFiles(node.node_id || node.mac || key);
 }
 
 document.getElementById('open-conv-btn').addEventListener('click', () => {
@@ -1480,16 +1564,22 @@ document.querySelectorAll('.rp-tab').forEach(btn => {
 // Spec: diffs appear in right panel Code tab with Accept/Reject/Modify per hunk
 // ---------------------------------------------------------------------------
 function showCodeDiff(convId, filename, hunks, confidence) {
-	const area = document.getElementById('diff-area');
+	const area = document.getElementById('code-content-area');
+	if (!area) return;
+	
 	area.innerHTML = '';
 
-	// Badge on Code tab
-	const badge = document.getElementById('rp-code-badge');
-	badge.classList.remove('hidden');
-
-	// Switch right panel to Code tab
-	document.querySelectorAll('.rp-tab').forEach(b => b.classList.toggle('active', b.dataset.rp === 'rp-code'));
-	document.querySelectorAll('.rp-pane').forEach(p => p.classList.toggle('hidden', p.id !== 'rp-code'));
+	// Title
+	const title = document.createElement('div');
+	title.style.cssText = `
+		padding: 12px 12px;
+		font-weight: 600;
+		font-size: 13px;
+		border-bottom: 1px solid var(--border);
+		background: var(--surface);
+	`;
+	title.innerHTML = `${hunks.length} file${hunks.length !== 1 ? 's' : ''} changed`;
+	area.appendChild(title);
 
 	// Confidence banner
 	if (confidence) {
@@ -1500,55 +1590,309 @@ function showCodeDiff(convId, filename, hunks, confidence) {
 		area.appendChild(conf);
 	}
 
-	hunks.forEach(hunk => {
+	let acceptedCount = 0;
+
+	hunks.forEach((hunk, idx) => {
 		const el = document.createElement('div');
 		el.className = 'diff-hunk';
+		el.id = `diff-hunk-${idx}`;
 
-		const header = document.createElement('div');
-		header.className = 'diff-hunk-header';
-		header.innerHTML = `
-			<span class="diff-hunk-file">${escHtml(filename)}</span>
-			<span class="diff-hunk-reason">${escHtml(hunk.reason || '')}</span>
-			<span class="diff-hunk-actions">
-				<button class="diff-action-btn accept">Accept</button>
-				<button class="diff-action-btn reject">Reject</button>
-				<button class="diff-action-btn modify">Modify</button>
-			</span>
+		// File header with proper unified diff format
+		const fileHeader = document.createElement('div');
+		fileHeader.className = 'diff-file-header';
+		fileHeader.style.cssText = `
+			padding: 10px 12px;
+			background: var(--surface);
+			border-bottom: 1px solid var(--border);
+			font-family: var(--font-mono);
+			font-size: 11px;
+			color: var(--text-mute);
+			cursor: pointer;
+			user-select: none;
+		`;
+		
+		const fileName = hunk.filename || 'code';
+		fileHeader.innerHTML = `
+			<div style="display:flex; align-items:center; gap:8px">
+				<span>▼</span>
+				<span style="color:var(--accent);font-weight:600">${escHtml(fileName)}</span>
+				<span style="margin-left:auto">@@ new file @@</span>
+			</div>
 		`;
 
+		// Action buttons
+		const actionBar = document.createElement('div');
+		actionBar.style.cssText = `
+			display: flex;
+			gap: 6px;
+			padding: 8px 12px;
+			background: var(--surface2);
+			border-bottom: 1px solid var(--border);
+			flex-shrink: 0;
+		`;
+
+		const acceptBtn = document.createElement('button');
+		acceptBtn.className = 'diff-action-btn accept';
+		acceptBtn.textContent = '✓ Accept';
+		acceptBtn.style.cssText = `
+			background: rgba(63, 185, 80, 0.1);
+			border: 1px solid var(--green);
+			color: var(--green);
+			padding: 4px 10px;
+			border-radius: 4px;
+			font-size: 11px;
+			cursor: pointer;
+			flex: 1;
+		`;
+
+		const rejectBtn = document.createElement('button');
+		rejectBtn.className = 'diff-action-btn reject';
+		rejectBtn.textContent = '✗ Reject';
+		rejectBtn.style.cssText = `
+			background: rgba(248, 81, 73, 0.1);
+			border: 1px solid var(--red);
+			color: var(--red);
+			padding: 4px 10px;
+			border-radius: 4px;
+			font-size: 11px;
+			cursor: pointer;
+			flex: 1;
+		`;
+
+		actionBar.appendChild(acceptBtn);
+		actionBar.appendChild(rejectBtn);
+
+		// Code diff with line numbers
 		const lines = document.createElement('div');
 		lines.className = 'diff-lines';
-		(hunk.lines || []).forEach(line => {
-			const span = document.createElement('span');
-			span.className = `diff-line ${line.type}`;
-			span.textContent = line.text;
-			lines.appendChild(span);
-		});
+		lines.style.cssText = `
+			font-family: var(--font-mono);
+			font-size: 11px;
+			background: var(--bg);
+			line-height: 1.6;
+			max-height: 400px;
+			overflow-y: auto;
+			border-bottom: 1px solid var(--border);
+		`;
+		
+		// Show original file is empty, then all lines are additions
+		if (hunk.rawCode) {
+			const codeLines = hunk.rawCode.split('\n');
+			codeLines.forEach((line, lineNum) => {
+				const lineEl = document.createElement('div');
+				lineEl.style.cssText = `
+					display: flex;
+					background: rgba(63, 185, 80, 0.08);
+					border-left: 3px solid var(--green);
+				`;
 
-		header.querySelector('.accept').addEventListener('click', () => {
-			if (conversations[convId] && conversations[convId].deployOnAccept) {
-				pushActivity('command', 'deploy-on-accept', `${filename}`);
+				const lineNumEl = document.createElement('span');
+				lineNumEl.style.cssText = `
+					width: 40px;
+					text-align: right;
+					padding-right: 10px;
+					color: var(--text-mute);
+					flex-shrink: 0;
+					user-select: none;
+					padding-left: 4px;
+				`;
+				lineNumEl.textContent = String(lineNum + 1);
+
+				const codeEl = document.createElement('span');
+				codeEl.style.cssText = `
+					flex: 1;
+					color: var(--green);
+					white-space: pre-wrap;
+					word-break: break-all;
+					padding-right: 10px;
+				`;
+				codeEl.textContent = '+ ' + line;
+
+				lineEl.appendChild(lineNumEl);
+				lineEl.appendChild(codeEl);
+				lines.appendChild(lineEl);
+			});
+		} else {
+			// Fallback to line-based rendering
+			(hunk.lines || []).forEach((line, lineNum) => {
+				const lineEl = document.createElement('div');
+				
+				if (line.type === 'add') {
+					lineEl.style.cssText = `
+						display: flex;
+						background: rgba(63, 185, 80, 0.08);
+						border-left: 3px solid var(--green);
+					`;
+
+					const lineNumSpan = document.createElement('span');
+					lineNumSpan.style.cssText = `
+						width: 40px;
+						text-align: right;
+						padding-right: 10px;
+						color: var(--text-mute);
+						flex-shrink: 0;
+						user-select: none;
+						padding-left: 4px;
+					`;
+					lineNumSpan.textContent = String(lineNum + 1);
+
+					const codeSpan = document.createElement('span');
+					codeSpan.style.cssText = `
+						flex: 1;
+						color: var(--green);
+						white-space: pre-wrap;
+						word-break: break-all;
+						padding-right: 10px;
+					`;
+					codeSpan.textContent = '+ ' + (line.text || '');
+
+					lineEl.appendChild(lineNumSpan);
+					lineEl.appendChild(codeSpan);
+				} else if (line.type === 'remove') {
+					lineEl.style.cssText = `
+						display: flex;
+						background: rgba(248, 81, 73, 0.08);
+						border-left: 3px solid var(--red);
+						opacity: 0.7;
+					`;
+
+					const lineNumSpan = document.createElement('span');
+					lineNumSpan.style.cssText = `
+						width: 40px;
+						text-align: right;
+						padding-right: 10px;
+						color: var(--text-mute);
+						flex-shrink: 0;
+						user-select: none;
+						padding-left: 4px;
+					`;
+					lineNumSpan.textContent = String(lineNum + 1);
+
+					const codeSpan = document.createElement('span');
+					codeSpan.style.cssText = `
+						flex: 1;
+						color: var(--red);
+						text-decoration: line-through;
+						white-space: pre-wrap;
+						word-break: break-all;
+						padding-right: 10px;
+					`;
+					codeSpan.textContent = '- ' + (line.text || '');
+
+					lineEl.appendChild(lineNumSpan);
+					lineEl.appendChild(codeSpan);
+				} else {
+					lineEl.style.cssText = `
+						display: flex;
+						color: var(--text-mute);
+					`;
+
+					const lineNumSpan = document.createElement('span');
+					lineNumSpan.style.cssText = `
+						width: 40px;
+						text-align: right;
+						padding-right: 10px;
+						color: var(--text-mute);
+						flex-shrink: 0;
+						user-select: none;
+						padding-left: 4px;
+					`;
+					lineNumSpan.textContent = String(lineNum + 1);
+
+					const codeSpan = document.createElement('span');
+					codeSpan.style.cssText = `
+						flex: 1;
+						white-space: pre-wrap;
+						word-break: break-all;
+						padding-right: 10px;
+					`;
+					codeSpan.textContent = '  ' + (line.text || '');
+
+					lineEl.appendChild(lineNumSpan);
+					lineEl.appendChild(codeSpan);
+				}
+
+				lines.appendChild(lineEl);
+			});
+		}
+
+		acceptBtn.addEventListener('click', () => {
+			el.style.opacity = '0.5';
+			el.style.pointerEvents = 'none';
+			actionBar.innerHTML = '<span style="color:var(--green);font-size:11px">✓ Accepted</span>';
+			acceptedCount++;
+			
+			// Check if all are accepted, then show compile button
+			if (acceptedCount === hunks.length) {
+				showCompilePrompt(convId, hunk.lang);
 			}
-			el.style.opacity = '0.4';
-			header.querySelector('.diff-hunk-actions').innerHTML = '<span style="color:var(--green)">Accepted</span>';
 		});
 
-		header.querySelector('.reject').addEventListener('click', () => {
-			el.style.opacity = '0.4';
-			header.querySelector('.diff-hunk-actions').innerHTML = '<span style="color:var(--red)">Rejected</span>';
+		rejectBtn.addEventListener('click', () => {
+			el.style.opacity = '0.3';
+			el.style.pointerEvents = 'none';
+			actionBar.innerHTML = '<span style="color:var(--red);font-size:11px">✗ Rejected</span>';
 		});
 
-		header.querySelector('.modify').addEventListener('click', () => {
-			// Open the code tab in the center panel for direct editing
-			switchConvTab('conv-system');
-			document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === 'tab-code'));
-			document.querySelectorAll('.tab-content').forEach(p => p.classList.toggle('hidden', p.id !== 'tab-code'));
+		// Make header clickable to collapse/expand
+		fileHeader.addEventListener('click', () => {
+			const isHidden = lines.style.display === 'none';
+			lines.style.display = isHidden ? 'block' : 'none';
+			actionBar.style.display = isHidden ? 'flex' : 'none';
+			const arrow = fileHeader.querySelector('span');
+			if (arrow) arrow.textContent = isHidden ? '▼' : '▶';
 		});
 
-		el.appendChild(header);
+		el.appendChild(fileHeader);
+		el.appendChild(actionBar);
 		el.appendChild(lines);
 		area.appendChild(el);
 	});
+}
+
+function showCompilePrompt(convId, lang) {
+	const area = document.getElementById('diff-area');
+	const prompt = document.createElement('div');
+	prompt.style.cssText = `
+		padding: 12px;
+		background: rgba(63, 185, 80, 0.1);
+		border: 1px solid var(--green);
+		border-radius: 6px;
+		margin-top: 12px;
+		display: flex;
+		align-items: center;
+		gap: 12px;
+	`;
+
+	const text = document.createElement('span');
+	text.style.cssText = `flex: 1; font-size: 12px; color: var(--green)`;
+	text.textContent = '✓ All changes accepted. Ready to compile?';
+	prompt.appendChild(text);
+
+	const compileBtn = document.createElement('button');
+	compileBtn.style.cssText = `
+		background: var(--green);
+		color: #000;
+		border: none;
+		padding: 6px 14px;
+		border-radius: 4px;
+		font-size: 12px;
+		font-weight: 600;
+		cursor: pointer;
+	`;
+	compileBtn.textContent = 'Compile';
+	
+	compileBtn.addEventListener('click', () => {
+		const conv = conversations[convId];
+		const envName = conv && conv.nodeId
+			? conv.nodeId.replace(/[^a-zA-Z0-9_]/g, '_')
+			: 'node_app';
+		triggerCompile(convId, envName);
+		prompt.remove();
+	});
+	
+	prompt.appendChild(compileBtn);
+	area.appendChild(prompt);
 }
 
 // ---------------------------------------------------------------------------
@@ -1622,6 +1966,114 @@ document.getElementById('estop-btn').addEventListener('click', () => {
 	});
 	pushActivity('command', 'ESTOP', 'Emergency stop published to system/estop');
 });
+
+// Deploy button handler
+const deployBtn = document.getElementById('code-deploy-btn');
+if (deployBtn) {
+	deployBtn.addEventListener('click', () => {
+		// Deploy the latest compiled firmware to the selected node
+		if (!state.selectedNodeId) {
+			alert('Select a node first');
+			return;
+		}
+		if (!state.activeConvId) {
+			alert('No active conversation');
+			return;
+		}
+		// Trigger OTA deployment using the latest binary from the active conversation
+		triggerOta(state.activeConvId, state.selectedNodeId, null);
+	});
+}
+
+// Past conversation selector handler
+const pastConvSelector = document.getElementById('past-conv-selector');
+if (pastConvSelector) {
+	pastConvSelector.addEventListener('change', (e) => {
+		if (e.target.value) {
+			loadPastConversation(e.target.value);
+		}
+	});
+}
+
+// Resizable right panel divider
+const rpDivider = document.getElementById('rp-divider');
+const rightFooter = document.getElementById('right-footer');
+const panelRight = document.getElementById('panel-right');
+
+if (rpDivider && rightFooter && panelRight) {
+	let isResizing = false;
+	let startY = 0;
+	let startHeight = 0;
+
+	rpDivider.addEventListener('mousedown', (e) => {
+		isResizing = true;
+		startY = e.clientY;
+		startHeight = rightFooter.offsetHeight;
+		document.body.style.userSelect = 'none';
+		document.body.style.cursor = 'row-resize';
+	});
+
+	document.addEventListener('mousemove', (e) => {
+		if (!isResizing) return;
+		
+		const delta = e.clientY - startY;
+		const newHeight = Math.max(40, startHeight - delta); // Min 40px
+		const panelHeight = panelRight.offsetHeight;
+		const maxHeight = panelHeight - 100; // Leave room for tabs and divider
+		const finalHeight = Math.min(newHeight, maxHeight);
+		
+		rightFooter.style.flex = `0 0 ${finalHeight}px`;
+		rightFooter.style.maxHeight = `${finalHeight}px`;
+	});
+
+	document.addEventListener('mouseup', () => {
+		if (isResizing) {
+			isResizing = false;
+			document.body.style.userSelect = 'auto';
+			document.body.style.cursor = 'auto';
+		}
+	});
+}
+
+// Resizable center-right panel divider (width)
+const cpDivider = document.getElementById('cp-divider');
+const panelCenter = document.getElementById('panel-center');
+const panels = document.querySelector('.panels');
+
+if (cpDivider && panelCenter && panels) {
+	let isResizing = false;
+	let startX = 0;
+	let startWidth = 0;
+
+	cpDivider.addEventListener('mousedown', (e) => {
+		isResizing = true;
+		startX = e.clientX;
+		startWidth = panelCenter.offsetWidth;
+		document.body.style.userSelect = 'none';
+		document.body.style.cursor = 'col-resize';
+	});
+
+	document.addEventListener('mousemove', (e) => {
+		if (!isResizing) return;
+		
+		const delta = e.clientX - startX;
+		const newWidth = Math.max(300, startWidth + delta); // Min 300px
+		const panelsWidth = panels.offsetWidth;
+		const rightPanelMinWidth = 200; // Minimum width for right panel
+		const maxWidth = panelsWidth - rightPanelMinWidth - 280 - 6; // Account for left panel, divider, right panel minimum
+		const finalWidth = Math.min(newWidth, maxWidth);
+		
+		panelCenter.style.flex = `0 0 ${finalWidth}px`;
+	});
+
+	document.addEventListener('mouseup', () => {
+		if (isResizing) {
+			isResizing = false;
+			document.body.style.userSelect = 'auto';
+			document.body.style.cursor = 'auto';
+		}
+	});
+}
 
 // ---------------------------------------------------------------------------
 // Utility
@@ -1726,6 +2178,400 @@ if (codeCancelBtn) {
 		cancelBtn.classList.add('hidden');
 		codeEditState.editing = false;
 	});
+}
+
+// ---------------------------------------------------------------------------
+// Conversation History / Past Conversations
+// ---------------------------------------------------------------------------
+let conversationHistory = [];
+
+function loadConversationHistory() {
+	send({ type: 'get_history', limit: 50 });
+}
+
+function searchConversations(query = '', kind = '', nodeId = '') {
+	send({
+		type: 'search_conversations',
+		query: query,
+		kind: kind,
+		node_id: nodeId,
+		limit: 50,
+	});
+}
+
+function loadPastConversation(convId) {
+	send({ type: 'get_conversation', conv_id: convId });
+}
+
+function renderConversationHistory(conversations) {
+	const container = document.getElementById('history-list');
+	const selector = document.getElementById('past-conv-selector');
+	
+	if (!conversations || conversations.length === 0) {
+		if (container) container.innerHTML = '<div class="empty-state">No conversations yet</div>';
+		if (selector) {
+			while (selector.options.length > 1) selector.remove(1);
+		}
+		return;
+	}
+
+	// Update the dropdown in the right panel chat area
+	if (selector) {
+		// Keep the "Select a conversation..." option, remove the rest
+		while (selector.options.length > 1) selector.remove(1);
+		
+		conversations.forEach(conv => {
+			const option = document.createElement('option');
+			option.value = conv.id;
+			option.textContent = `${conv.title} (${new Date(conv.created * 1000).toLocaleDateString()})`;
+			selector.appendChild(option);
+		});
+	}
+	
+	// Also update the history list in the left panel (for History view)
+	if (container) {
+		container.innerHTML = '';
+		conversations.forEach(conv => {
+			const card = document.createElement('div');
+			card.className = 'history-card';
+			
+			const createdDate = new Date(conv.created * 1000).toLocaleDateString();
+			const nodeLabels = (conv.related_nodes || []).map(n => `<span class="node-tag">${escHtml(n)}</span>`).join('');
+			const codeCount = conv.code_blocks || 0;
+			const deployed = conv.deployed_to ? ` → deployed` : '';
+			
+			card.innerHTML = `
+				<div class="history-card-title" onclick="loadPastConversation('${escHtml(conv.id)}')">${escHtml(conv.title)}</div>
+				<div class="history-card-meta">
+					${createdDate}
+					<span class="kind-badge">${escHtml(conv.kind)}</span>
+					${nodeLabels}
+					${codeCount > 0 ? `<span class="code-badge">${codeCount} code${deployed}</span>` : ''}
+				</div>
+			${conv.summary ? `<div class="history-card-summary">${escHtml(conv.summary.substring(0, 100))}...</div>` : ''}
+		`;
+		
+		container.appendChild(card);
+		});
+	}
+}
+
+function displayPastConversation(conv) {
+	// Display a past conversation in the right panel chat area
+	if (!conv || !conv.id) return;
+	
+	// Display in right panel chat area
+	const chatArea = document.getElementById('rp-chat-area');
+	if (chatArea) {
+		chatArea.innerHTML = '';
+		
+		// Title
+		const title = document.createElement('div');
+		title.style.cssText = `
+			padding: 10px;
+			border-bottom: 1px solid var(--border);
+			font-weight: 600;
+			font-size: 13px;
+			background: var(--surface2);
+		`;
+		title.textContent = `${conv.title}`;
+		chatArea.appendChild(title);
+		
+		// Messages container
+		const messagesContainer = document.createElement('div');
+		messagesContainer.style.cssText = `
+			flex: 1;
+			overflow-y: auto;
+			padding: 10px;
+			display: flex;
+			flex-direction: column;
+			gap: 8px;
+		`;
+		
+		// Render all messages
+		if (conv.messages && conv.messages.length > 0) {
+			conv.messages.forEach(msg => {
+				const msgEl = document.createElement('div');
+				msgEl.style.cssText = `
+					display: flex;
+					flex-direction: column;
+					gap: 4px;
+					max-width: 85%;
+					${msg.role === 'user' ? 'align-self: flex-end;' : 'align-self: flex-start;'}
+				`;
+				
+				const bubble = document.createElement('div');
+				bubble.style.cssText = `
+					padding: 10px 14px;
+					border-radius: 6px;
+					font-size: 13px;
+					line-height: 1.6;
+					word-wrap: break-word;
+					${msg.role === 'user' 
+						? 'background: var(--accent); color: #fff; border-bottom-right-radius: 2px;' 
+						: 'background: var(--surface); border: 1px solid var(--border); border-bottom-left-radius: 2px;'
+					}
+				`;
+				bubble.textContent = msg.content || msg.text || '';
+				
+				msgEl.appendChild(bubble);
+				messagesContainer.appendChild(msgEl);
+			});
+		} else {
+			const empty = document.createElement('div');
+			empty.style.cssText = 'color: var(--text-mute); font-size: 12px; text-align: center;';
+			empty.textContent = 'No messages in this conversation';
+			messagesContainer.appendChild(empty);
+		}
+		
+		// Render code blocks
+		if (conv.code_blocks && conv.code_blocks.length > 0) {
+			conv.code_blocks.forEach(block => {
+				if (block.language && block.code) {
+					const status = block.status || 'proposed';
+					const statusBadge = {
+						'proposed': '📝',
+						'accepted': '✓',
+						'compiled': '✓ Built',
+						'deployed': '✓ Deployed'
+					}[status] || status;
+					
+					const deployedTo = block.deployed_to ? ` to ${block.deployed_to.join(', ')}` : '';
+					
+					const codeEl = document.createElement('div');
+					codeEl.style.cssText = `
+						background: var(--surface);
+						border: 1px solid var(--border);
+						border-radius: 6px;
+						padding: 10px;
+						font-family: var(--font-mono);
+						font-size: 11px;
+						overflow-x: auto;
+						margin: 8px 0;
+					`;
+					codeEl.innerHTML = `
+						<div style="color: var(--text-mute); font-size: 10px; margin-bottom: 6px;">${statusBadge} ${block.filename || 'code'} (${block.language})${deployedTo}</div>
+						<pre style="margin: 0; white-space: pre-wrap; word-break: break-all;">${escHtml(block.code)}</pre>
+					`;
+					messagesContainer.appendChild(codeEl);
+				}
+			});
+		}
+		
+		chatArea.appendChild(messagesContainer);
+	}
+}
+
+function displayNodeFiles(nodeId, files, selectedFile) {
+	// Display source files for a node in the center code view with edit capability
+	const container = document.getElementById('code-content-area');
+	if (!container) return;
+	
+	if (!files || files.length === 0) {
+		return; // No files to display
+	}
+
+	container.innerHTML = '';
+
+	// Store current file state for edit mode
+	let currentFile = null;
+	let editMode = false;
+
+	// Header with file tabs and edit button
+	const header = document.createElement('div');
+	header.style.cssText = `
+		display: flex;
+		gap: 0;
+		background: var(--surface);
+		border-bottom: 1px solid var(--border);
+		padding: 0;
+		overflow-x: auto;
+		align-items: center;
+	`;
+
+	files.forEach((file, idx) => {
+		const tab = document.createElement('button');
+		const isSelected = selectedFile === file.name || idx === 0;
+		tab.style.cssText = `
+			padding: 10px 16px;
+			background: ${isSelected ? 'var(--bg)' : 'var(--surface)'};
+			border: none;
+			border-bottom: ${isSelected ? '2px solid var(--accent)' : '1px solid var(--border)'};
+			color: ${isSelected ? 'var(--accent)' : 'var(--text-mute)'};
+			font-family: var(--font-mono);
+			font-size: 12px;
+			cursor: pointer;
+			white-space: nowrap;
+			flex-shrink: 0;
+		`;
+		tab.textContent = file.name;
+
+		tab.addEventListener('click', () => {
+			if (editMode) return; // Prevent switching files while editing
+			currentFile = file;
+			// Update all tabs
+			header.querySelectorAll('button.file-tab').forEach(t => {
+				t.style.background = 'var(--surface)';
+				t.style.borderBottom = '1px solid var(--border)';
+				t.style.color = 'var(--text-mute)';
+			});
+			tab.style.background = 'var(--bg)';
+			tab.style.borderBottom = '2px solid var(--accent)';
+			tab.style.color = 'var(--accent)';
+
+			// Show content
+			viewer.textContent = file.content || '';
+			editor.value = file.content || '';
+		});
+
+		tab.className = 'file-tab';
+		header.appendChild(tab);
+	});
+
+	// Edit/Save/Cancel buttons
+	const actionBar = document.createElement('div');
+	actionBar.style.cssText = `
+		display: flex;
+		gap: 6px;
+		margin-left: auto;
+		padding: 8px 12px;
+		flex-shrink: 0;
+	`;
+
+	const editBtn = document.createElement('button');
+	editBtn.textContent = 'Edit';
+	editBtn.style.cssText = `
+		background: var(--accent);
+		color: #fff;
+		border: none;
+		border-radius: 4px;
+		padding: 6px 12px;
+		font-size: 12px;
+		cursor: pointer;
+	`;
+
+	const saveBtn = document.createElement('button');
+	saveBtn.textContent = 'Save';
+	saveBtn.style.cssText = `
+		background: var(--green);
+		color: #000;
+		border: none;
+		border-radius: 4px;
+		padding: 6px 12px;
+		font-size: 12px;
+		cursor: pointer;
+		display: none;
+	`;
+
+	const cancelBtn = document.createElement('button');
+	cancelBtn.textContent = 'Cancel';
+	cancelBtn.style.cssText = `
+		background: var(--surface2);
+		color: var(--text);
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		padding: 6px 12px;
+		font-size: 12px;
+		cursor: pointer;
+		display: none;
+	`;
+
+	editBtn.addEventListener('click', () => {
+		editMode = true;
+		viewer.style.display = 'none';
+		editor.style.display = 'block';
+		editBtn.style.display = 'none';
+		saveBtn.style.display = 'block';
+		cancelBtn.style.display = 'block';
+	});
+
+	saveBtn.addEventListener('click', () => {
+		if (currentFile) {
+			currentFile.content = editor.value;
+		}
+		editMode = false;
+		viewer.textContent = editor.value;
+		viewer.style.display = 'block';
+		editor.style.display = 'none';
+		editBtn.style.display = 'block';
+		saveBtn.style.display = 'none';
+		cancelBtn.style.display = 'none';
+	});
+
+	cancelBtn.addEventListener('click', () => {
+		editMode = false;
+		editor.value = currentFile ? currentFile.content : '';
+		viewer.style.display = 'block';
+		editor.style.display = 'none';
+		editBtn.style.display = 'block';
+		saveBtn.style.display = 'none';
+		cancelBtn.style.display = 'none';
+	});
+
+	actionBar.appendChild(editBtn);
+	actionBar.appendChild(saveBtn);
+	actionBar.appendChild(cancelBtn);
+	header.appendChild(actionBar);
+
+	// Code viewer (read-only)
+	const viewer = document.createElement('pre');
+	viewer.style.cssText = `
+		padding: 16px;
+		margin: 0;
+		background: var(--bg);
+		font-family: var(--font-mono);
+		font-size: 12px;
+		line-height: 1.6;
+		color: var(--text);
+		white-space: pre-wrap;
+		word-wrap: break-word;
+		flex: 1;
+		overflow: auto;
+		display: none;
+	`;
+
+	// Code editor (textarea)
+	const editor = document.createElement('textarea');
+	editor.style.cssText = `
+		padding: 16px;
+		margin: 0;
+		background: var(--surface2);
+		font-family: var(--font-mono);
+		font-size: 12px;
+		line-height: 1.6;
+		color: var(--text);
+		border: none;
+		flex: 1;
+		overflow: auto;
+		display: none;
+		resize: none;
+	`;
+	editor.addEventListener('focus', () => {
+		editor.style.borderColor = 'var(--accent)';
+	});
+	editor.addEventListener('blur', () => {
+		editor.style.borderColor = 'transparent';
+	});
+
+	container.appendChild(header);
+	container.appendChild(viewer);
+	container.appendChild(editor);
+
+	// Load first file by default
+	if (files.length > 0) {
+		setTimeout(() => {
+			currentFile = files[0];
+			viewer.style.display = 'block';
+			viewer.textContent = files[0].content || '';
+			editor.value = files[0].content || '';
+			header.querySelector('button.file-tab').click();
+		}, 0);
+	}
+}
+
+// Node file requests
+function requestNodeFiles(nodeId) {
+	send({ type: 'get_node_files', node_id: nodeId });
 }
 
 // ---------------------------------------------------------------------------

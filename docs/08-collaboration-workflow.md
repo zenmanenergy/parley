@@ -98,6 +98,97 @@ This matters because real work is often interleaved. A debugging session for the
 
 Conversations can reference each other when relevant. A link from one conversation to another preserves the connection in the project history without coupling the conversations' contexts.
 
+### Conversation Persistence and History
+
+Every conversation, including all messages, code blocks, and metadata, is automatically persisted to the Pi's local filesystem. This ensures that work is never lost if the dashboard is closed or the server restarts, and provides a searchable archive of engineering decisions and iterations.
+
+**How Conversations Are Saved**
+
+Conversations are stored in a `conversations/` directory on the Pi, organized by date. Each conversation is a single JSON file named `YYYY-MM-DD_HH-MM-SS_title.json` containing:
+
+- Full conversation history (all human and AI messages in order)
+- Timestamps for each message
+- All code blocks proposed or accepted
+- Metadata: conversation kind, related nodes, tasks surfaced
+- Deployment record: which code was compiled, when, to which nodes
+- Status: active, closed, archived
+
+File format:
+```json
+{
+  "id": "conv-1717793400",
+  "title": "Add GPS sensor to main node",
+  "kind": "register",
+  "created": "2026-06-07T19:23:20Z",
+  "closed": "2026-06-07T20:15:45Z",
+  "related_nodes": ["nav-01"],
+  "messages": [
+    {"role": "human", "text": "...", "timestamp": "..."},
+    {"role": "assistant", "text": "...", "timestamp": "..."}
+  ],
+  "code_blocks": [
+    {
+      "language": "cpp",
+      "filename": "firmware/nodes/src/nav_node/main.cpp",
+      "code": "...",
+      "status": "accepted",
+      "compiled_at": "...",
+      "deployed_to": ["nav-01"],
+      "proposed_by": "assistant",
+      "accepted_by": "human"
+    }
+  ],
+  "tasks": [...],
+  "summary": "..."
+}
+```
+
+**Retrieving Past Conversations**
+
+The dashboard provides a History view accessible from the left panel. The view displays:
+
+- **Search and filter.** Find conversations by title, date range, related node, conversation kind, or full-text search across message content.
+- **Conversation cards.** Each past conversation shows:
+  - Title and date
+  - Duration (how long the conversation lasted)
+  - Related nodes (if any)
+  - Snippet of the summary
+  - Tag indicating if code was deployed and to which nodes
+- **Click to load.** Clicking a past conversation loads it fully into a new tab with all messages, code blocks, and decisions visible for review.
+
+**Search Capabilities**
+
+The search supports several patterns:
+
+- **By title:** "GPS calibration" finds conversations with those words in the title
+- **By node:** "nav-01" finds all conversations that worked on that specific node
+- **By date:** "2026-06-07" or "last week" filters by date range
+- **By kind:** "register" or "debug" filters by conversation type
+- **By text:** "threshold" searches across all message content and code
+- **By outcome:** "deployed" shows only conversations that resulted in code being pushed to nodes
+
+**Code Lineage**
+
+When browsing a past conversation, the code blocks show their complete lineage:
+
+- What was proposed
+- What was accepted or rejected
+- What was compiled (with compiler output if there were warnings)
+- What was deployed to which nodes (with deployment timestamp)
+- Whether the deployed version is still the active firmware on the node
+
+This makes it easy to understand the decision history for any piece of code currently running on the robot. A human can ask: "Why does nav-01 have its watchdog threshold set to 60 seconds?" and follow the link back to the conversation where that decision was made, see the reasoning, see the alternative options that were considered, and understand the context.
+
+**Linking Conversations**
+
+Related conversations can be explicitly linked. If one conversation surfaces a followup task that becomes its own conversation, the conversations can be linked so the chain of work is visible in the history. This is particularly useful for:
+
+- Registration → validation → calibration chains (new node, basic testing, fine-tuning)
+- Bug diagnosis → root cause → fix → validation chains
+- Refactoring → rebase → testing chains
+
+Links are bidirectional and appear in both conversations' views.
+
 ### Tasks Emerging From Conversations
 
 This is one of the dashboard's central ideas. The AI agent does not require humans to define tasks up front. Instead, as a conversation develops, the AI agent identifies discrete pieces of work and surfaces them in the task panel.

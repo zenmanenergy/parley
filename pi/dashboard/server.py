@@ -316,12 +316,20 @@ def on_message(client, userdata, msg):
     except Exception:
         payload = {"raw": msg.payload.decode(errors="replace")}
 
+    log.debug("on_message: topic=%s payload=%s", topic, payload)
+
     # --- system/discovery ---
     if topic == "system/discovery":
         mac = payload.get("mac")
+        log.debug("system/discovery: mac=%s", mac)
         if mac:
-            node = registry.upsert(mac, payload)
-            _schedule_broadcast({"type": "node_update", "node": node})
+            registry.upsert(mac, payload)
+            # Get the full node with connectivity calculated
+            all_nodes = registry.all()
+            node = next((n for n in all_nodes if n.get("mac") == mac), None)
+            if node:
+                log.info("Node upserted: mac=%s last_seen=%s connectivity=%s", mac, node.get("last_seen"), node.get("connectivity"))
+                _schedule_broadcast({"type": "node_update", "node": node})
 
     # --- system/registered ---
     elif topic == "system/registered":
@@ -417,8 +425,12 @@ def start_mqtt():
 # conv_id -> list of {"role": "user"|"assistant", "content": "..."}
 # ---------------------------------------------------------------------------
 
+CONVERSATIONS_DIR = Path(__file__).parent / "conversations"
+CONVERSATIONS_DIR.mkdir(exist_ok=True)
+
 conv_sessions: Dict[str, List[dict]] = {}
 conv_lock = threading.Lock()
+conv_metadata: Dict[str, dict] = {}  # conv_id -> {title, created, related_nodes, code_blocks, etc}
 
 def _get_conv_history(conv_id: str) -> List[dict]:
     with conv_lock:
@@ -430,7 +442,126 @@ def _append_conv(conv_id: str, role: str, content: str):
     with conv_lock:
         if conv_id not in conv_sessions:
             conv_sessions[conv_id] = []
-        conv_sessions[conv_id].append({"role": role, "content": content})
+        conv_sessions[conv_id].append({"role": role, "content": content, "timestamp": time.time()})
+    _save_conversation_to_disk(conv_id)
+
+def _set_conv_metadata(conv_id: str, **kwargs):
+	"""Update conversation metadata (title, related_nodes, kind, etc)."""
+	with conv_lock:
+		if conv_id not in conv_metadata:
+			conv_metadata[conv_id] = {"created": time.time()}
+		conv_metadata[conv_id].update(kwargs)
+	_save_conversation_to_disk(conv_id)
+
+def _save_conversation_to_disk(conv_id: str):
+	"""Save a conversation and its metadata to a JSON file."""
+	try:
+		with conv_lock:
+			if conv_id not in conv_sessions:
+				return
+			history = conv_sessions[conv_id]
+			meta = conv_metadata.get(conv_id, {})
+		
+		# Generate filename from metadata or conv_id
+		title = meta.get("title", "untitled")
+		created = meta.get("created", time.time())
+		created_dt = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime(created))
+		# Sanitize title for filename
+		title_safe = re.sub(r"[^a-zA-Z0-9_-]", "_", title)[:40]
+		filename = f"{created_dt}_{title_safe}.json"
+		
+		filepath = CONVERSATIONS_DIR / filename
+		
+		conv_data = {
+			"id": conv_id,
+			"title": title,
+			"kind": meta.get("kind", "other"),
+			"created": created,
+			"closed": meta.get("closed"),
+			"related_nodes": meta.get("related_nodes", []),
+			"messages": history,
+			"code_blocks": meta.get("code_blocks", []),
+			"tasks": meta.get("tasks", []),
+			"summary": meta.get("summary"),
+		}
+		
+		filepath.write_text(json.dumps(conv_data, indent=2, default=str), encoding="utf-8")
+		log.debug("Saved conversation %s to %s", conv_id, filepath)
+	except Exception as e:
+		log.error("Failed to save conversation: %s", e)
+
+def _load_conversations_from_disk():
+	"""Load all past conversations from disk on startup."""
+	try:
+		if not CONVERSATIONS_DIR.exists():
+			return
+		for filepath in sorted(CONVERSATIONS_DIR.glob("*.json"), reverse=True):
+			try:
+				data = json.loads(filepath.read_text(encoding="utf-8"))
+				conv_id = data.get("id")
+				if conv_id:
+					with conv_lock:
+						conv_sessions[conv_id] = data.get("messages", [])
+						conv_metadata[conv_id] = {
+							"title": data.get("title"),
+							"kind": data.get("kind"),
+							"created": data.get("created"),
+							"closed": data.get("closed"),
+							"related_nodes": data.get("related_nodes", []),
+							"code_blocks": data.get("code_blocks", []),
+							"tasks": data.get("tasks", []),
+							"summary": data.get("summary"),
+						}
+				log.debug("Loaded conversation from %s", filepath.name)
+			except Exception as e:
+				log.warning("Failed to load conversation from %s: %s", filepath.name, e)
+	except Exception as e:
+		log.error("Failed to load conversations: %s", e)
+
+def _search_conversations(query: str = "", kind: str = "", node_id: str = "", limit: int = 50) -> List[dict]:
+	"""Search conversations by title, kind, node, or full-text search."""
+	results = []
+	query_lower = query.lower()
+	
+	with conv_lock:
+		for conv_id, meta in sorted(conv_metadata.items(), key=lambda x: x[1].get("created", 0), reverse=True):
+			# Filter by kind
+			if kind and meta.get("kind") != kind:
+				continue
+			
+			# Filter by node
+			if node_id and node_id not in meta.get("related_nodes", []):
+				continue
+			
+			# Search by title or full-text
+			if query_lower:
+				title = meta.get("title", "").lower()
+				if query_lower not in title:
+					# Try full-text search in messages
+					found = False
+					for msg in conv_sessions.get(conv_id, []):
+						if query_lower in msg.get("content", "").lower():
+							found = True
+							break
+					if not found:
+						continue
+			
+			# Build result card
+			result = {
+				"id": conv_id,
+				"title": meta.get("title", "Untitled"),
+				"created": meta.get("created"),
+				"closed": meta.get("closed"),
+				"kind": meta.get("kind", "other"),
+				"related_nodes": meta.get("related_nodes", []),
+				"summary": meta.get("summary", ""),
+				"message_count": len(conv_sessions.get(conv_id, [])),
+				"code_blocks": len(meta.get("code_blocks", [])),
+			}
+			results.append(result)
+	
+	return results[:limit]
+
 
 
 # ---------------------------------------------------------------------------
@@ -540,6 +671,9 @@ async def stream_claude(ws: ServerConnection, conv_id: str, user_message: str, n
 	_append_conv(conv_id, "user", user_message)
 	history = _get_conv_history(conv_id)
 
+	# Filter messages to only include role and content (Claude API doesn't accept timestamp or other fields)
+	api_messages = [{"role": m["role"], "content": m["content"]} for m in history]
+
 	client_ai = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
 	full_text = ""
@@ -548,7 +682,7 @@ async def stream_claude(ws: ServerConnection, conv_id: str, user_message: str, n
 			model="claude-sonnet-4-5",
 			max_tokens=4096,
 			system=system,
-			messages=history,
+			messages=api_messages,
 		) as stream:
 			for chunk in stream.text_stream:
 				full_text += chunk
@@ -569,6 +703,9 @@ async def stream_claude(ws: ServerConnection, conv_id: str, user_message: str, n
 
 	code_blocks = extract_code_blocks(full_text)
 	tasks = extract_tasks(full_text)
+
+	# Update metadata with code blocks and tasks
+	_set_conv_metadata(conv_id, code_blocks=code_blocks, tasks=tasks)
 
 	await ws.send(json.dumps({
 		"type": "ai_message_done",
@@ -644,6 +781,7 @@ async def compile_firmware(ws: ServerConnection, env_name: str, source_code: str
     """
     Write source_code to firmware/nodes/src/<env_name>/main.cpp,
     run pio run -e <env_name>, stream output, copy .bin to static/firmware/.
+    Also records compilation metadata in conversation history.
     """
     src_dir = FIRMWARE_NODES_DIR / "src" / env_name
     src_dir.mkdir(parents=True, exist_ok=True)
@@ -652,6 +790,17 @@ async def compile_firmware(ws: ServerConnection, env_name: str, source_code: str
     log.info("Wrote firmware source to %s", src_file)
 
     FIRMWARE_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Track compilation in conversation metadata
+    with conv_lock:
+        if conv_id in conv_metadata:
+            code_blocks = conv_metadata[conv_id].get("code_blocks", [])
+            # Mark the code block as being compiled
+            for block in code_blocks:
+                if block.get("language") in ("cpp", "c"):
+                    block["compiled_at"] = time.time()
+                    block["status"] = "compiling"
+            conv_metadata[conv_id]["code_blocks"] = code_blocks
 
     await ws.send(json.dumps({
         "type": "compile_start",
@@ -702,6 +851,17 @@ async def compile_firmware(ws: ServerConnection, env_name: str, source_code: str
             bin_dst.write_bytes(bin_src.read_bytes())
             bin_url = f"http://{PI_IP}:{HTTP_PORT}/firmware/{env_name}.bin"
             log.info("Firmware ready at %s", bin_url)
+            
+            # Mark code block as successfully compiled
+            with conv_lock:
+                if conv_id in conv_metadata:
+                    code_blocks = conv_metadata[conv_id].get("code_blocks", [])
+                    for block in code_blocks:
+                        if block.get("language") in ("cpp", "c"):
+                            block["status"] = "compiled"
+                            block["bin_url"] = bin_url
+                    conv_metadata[conv_id]["code_blocks"] = code_blocks
+            _save_conversation_to_disk(conv_id)
 
     await ws.send(json.dumps({
         "type": "compile_done",
@@ -718,14 +878,195 @@ async def compile_firmware(ws: ServerConnection, env_name: str, source_code: str
 # OTA push via MQTT
 # ---------------------------------------------------------------------------
 
-def push_ota(node_id: str, bin_url: str) -> bool:
-    """Publish {"url": bin_url} to nodes/<node_id>/ota so the node downloads and flashes."""
+def push_ota(node_id: str, bin_url: str, conv_id: str = None) -> bool:
+    """Publish {"url": bin_url} to nodes/<node_id>/ota so the node downloads and flashes.
+    Optionally records deployment in conversation metadata."""
     if not mqtt_client:
         return False
     payload = json.dumps({"url": bin_url})
     result = mqtt_client.publish(f"nodes/{node_id}/ota", payload, qos=1)
+    success = result.rc == 0
     log.info("OTA push to %s: %s (rc=%s)", node_id, bin_url, result.rc)
-    return result.rc == 0
+    
+    # Record deployment in conversation metadata if conv_id provided
+    if success and conv_id:
+        with conv_lock:
+            if conv_id in conv_metadata:
+                code_blocks = conv_metadata[conv_id].get("code_blocks", [])
+                for block in code_blocks:
+                    if block.get("status") == "compiled":
+                        if "deployed_to" not in block:
+                            block["deployed_to"] = []
+                        if node_id not in block["deployed_to"]:
+                            block["deployed_to"].append(node_id)
+                        block["deployed_at"] = time.time()
+                        block["status"] = "deployed"
+                conv_metadata[conv_id]["code_blocks"] = code_blocks
+        _save_conversation_to_disk(conv_id)
+    
+    return success
+
+
+# ---------------------------------------------------------------------------
+# Serial reader (USB tunnel from gateway)
+# Reads JSON messages from gateway and publishes to MQTT broker
+# ---------------------------------------------------------------------------
+
+def find_gateway_port():
+	"""Auto-detect the gateway ESP32-S3 on any available COM port."""
+	try:
+		import serial
+		import serial.tools.list_ports
+	except ImportError:
+		log.warning("pyserial not installed. Serial tunnel disabled. Run: pip install pyserial")
+		return None
+
+	# Look for ESP32-S3 or CH343 (USB chip on gateway)
+	for port_info in serial.tools.list_ports.comports():
+		port = port_info.device
+		# ESP32-S3 typically shows as "USB JTAG/serial debug unit" or "CH343"
+		desc = port_info.description.lower()
+		if "esp" in desc or "ch343" in desc or "usb" in desc:
+			log.info("Found potential gateway: %s (%s)", port, port_info.description)
+			return port
+	
+	# Fallback: try COM ports in order
+	for i in range(3, 15):
+		port = f"COM{i}"
+		try:
+			ser = serial.Serial(port, 115200, timeout=0.1)
+			# Try to read banner to detect ESP32
+			data = ser.read(256)
+			if b"parley" in data.lower() or b"esp32" in data.lower():
+				log.info("Detected gateway on %s", port)
+				ser.close()
+				return port
+			ser.close()
+		except Exception:
+			pass
+	
+	log.warning("Gateway device not found on any COM port")
+	return None
+
+
+def start_serial_reader():
+	"""Read JSON messages from gateway over USB serial and bridge to MQTT."""
+	try:
+		import serial
+	except ImportError:
+		log.warning("pyserial not installed. Serial tunnel disabled. Run: pip install pyserial")
+		return
+
+	port = None
+	baudrate = 115200
+	ser = None
+	last_port_check = 0
+	reconnect_delay = 3  # Start with 3 seconds (Windows USB needs time to release)
+	max_reconnect_delay = 30  # Up to 30 seconds max
+
+	# Initial wait to ensure port is released after previous process
+	log.info("Waiting 2 seconds for USB port to stabilize...")
+	time.sleep(2)
+
+	while True:
+		try:
+			# Auto-detect port only when disconnected (not while connected)
+			if port is None:
+				port = find_gateway_port()
+				if port is None:
+					log.warning("Waiting for gateway device (USB)...")
+					time.sleep(5)
+					continue
+
+			if ser is None:
+				log.info("Opening %s at %d baud...", port, baudrate)
+				try:
+					ser = serial.Serial(port, baudrate, timeout=1.0)
+					ser.reset_input_buffer()
+					log.info("Connected to gateway on %s", port)
+					reconnect_delay = 3  # Reset to 3s on successful connection
+				except (serial.SerialException, PermissionError, OSError) as e:
+					log.warning("Failed to open %s: %s (retrying in %ds)", port, e, reconnect_delay)
+					ser = None
+					time.sleep(reconnect_delay)
+					reconnect_delay = min(reconnect_delay * 2.0, max_reconnect_delay)  # Double backoff instead of 1.5x
+					continue
+
+			# Read one complete line (JSON message terminated with \n)
+			line = ser.readline().decode(errors="replace").strip()
+			if not line:
+				continue
+
+			# Parse JSON
+			try:
+				msg = json.loads(line)
+			except json.JSONDecodeError:
+				log.debug("Invalid JSON from serial: %s", line)
+				continue
+
+			op = msg.get("op")
+			topic = msg.get("topic")
+			payload = msg.get("payload")
+
+			log.info("Serial tunnel: op=%s topic=%s payload=%s", op, topic, payload)
+
+			# --- gateway_boot ---
+			if op == "gateway_boot":
+				if topic and mqtt_client:
+					mqtt_client.publish(topic, json.dumps({"status": "boot", "fw": payload}))
+					log.info("Gateway boot announced: %s", payload)
+
+			# --- client_connect ---
+			elif op == "client_connect":
+				# payload = node IP address (e.g. "192.168.4.2")
+				if mqtt_client:
+					discovery_msg = {
+						"mac": payload,
+						"ip": payload,
+						"status": "factory",
+						"fw": "factory",
+					}
+					mqtt_client.publish("system/discovery", json.dumps(discovery_msg))
+					log.info("Node discovery: %s", payload)
+
+			# --- mqtt_connect ---
+			elif op == "mqtt_connect":
+				if mqtt_client:
+					log.info("Node MQTT connected")
+					mqtt_client.publish("system/discovery", json.dumps({"event": "mqtt_connected"}))
+
+			# --- publish ---
+			elif op == "publish":
+				if topic and mqtt_client:
+					mqtt_client.publish(topic, payload or "")
+					log.debug("Bridged publish: %s", topic)
+
+			# --- client_disconnect ---
+			elif op == "client_disconnect":
+				if mqtt_client:
+					log.info("Node MQTT disconnected")
+					mqtt_client.publish("system/discovery", json.dumps({"event": "mqtt_disconnected"}))
+
+		except (serial.SerialException, OSError) as e:
+			log.warning("Serial port lost: %s, will reconnect...", e)
+			if ser:
+				try:
+					ser.close()
+				except Exception:
+					pass
+			ser = None
+			port = None
+			reconnect_delay = min(reconnect_delay * 1.5, max_reconnect_delay)
+			time.sleep(1)
+		except Exception as e:
+			log.error("Serial reader error: %s", e)
+			if ser:
+				try:
+					ser.close()
+				except Exception:
+					pass
+			ser = None
+			time.sleep(2)
 
 
 # ---------------------------------------------------------------------------
@@ -800,12 +1141,18 @@ async def handle_ws_message(ws: ServerConnection, msg: dict):
             }))
 
     elif kind == "chat_message":
-        # { type: "chat_message", conv_id: "conv-1", message: "...", node_id: "imu-01" }
+        # { type: "chat_message", conv_id: "conv-1", message: "...", node_id: "imu-01", title: "...", kind: "..." }
         conv_id      = msg.get("conv_id", "default")
         user_message = msg.get("message", "").strip()
         node_id      = msg.get("node_id", "")
+        title        = msg.get("title", "Conversation")
+        conv_kind    = msg.get("kind", "other")
         if not user_message:
             return
+        
+        # Initialize conversation metadata on first message
+        _set_conv_metadata(conv_id, title=title, kind=conv_kind, related_nodes=[node_id] if node_id else [])
+        
         node_context = None
         if node_id:
             all_nodes = registry.all()
@@ -827,11 +1174,12 @@ async def handle_ws_message(ws: ServerConnection, msg: dict):
         asyncio.create_task(compile_firmware(ws, env_name, source_code, conv_id))
 
     elif kind == "push_ota":
-        # { type: "push_ota", node_id: "imu-01", bin_url: "http://..." }
+        # { type: "push_ota", node_id: "imu-01", bin_url: "http://...", conv_id: "conv-1" }
         node_id = msg.get("node_id", "").strip()
         bin_url = msg.get("bin_url", "").strip()
+        conv_id = msg.get("conv_id", "").strip()
         if node_id and bin_url:
-            ok = push_ota(node_id, bin_url)
+            ok = push_ota(node_id, bin_url, conv_id=conv_id if conv_id else None)
             await ws.send(json.dumps({
                 "type": "ota_sent",
                 "node_id": node_id,
@@ -876,6 +1224,113 @@ async def handle_ws_message(ws: ServerConnection, msg: dict):
             "query": query,
             "results": results,
         }))
+
+    elif kind == "get_history":
+        # Get list of past conversations with optional filters
+        # { type: "get_history", limit: 50 }
+        limit = msg.get("limit", 50)
+        results = _search_conversations(query="", kind="", node_id="", limit=limit)
+        await ws.send(json.dumps({
+            "type": "history",
+            "conversations": results,
+        }))
+
+    elif kind == "search_conversations":
+        # Search past conversations
+        # { type: "search_conversations", query: "GPS", kind: "", node_id: "", limit: 50 }
+        query = msg.get("query", "").strip()
+        kind = msg.get("kind", "").strip()
+        node_id = msg.get("node_id", "").strip()
+        limit = msg.get("limit", 50)
+        results = _search_conversations(query=query, kind=kind, node_id=node_id, limit=limit)
+        await ws.send(json.dumps({
+            "type": "search_results",
+            "query": query,
+            "conversations": results,
+        }))
+
+    elif kind == "get_conversation":
+        # Load a full past conversation
+        # { type: "get_conversation", conv_id: "conv-1" }
+        conv_id = msg.get("conv_id", "")
+        with conv_lock:
+            history = list(conv_sessions.get(conv_id, []))
+            meta = conv_metadata.get(conv_id, {})
+        
+        conv_data = {
+            "id": conv_id,
+            "title": meta.get("title", "Untitled"),
+            "kind": meta.get("kind", "other"),
+            "created": meta.get("created"),
+            "closed": meta.get("closed"),
+            "related_nodes": meta.get("related_nodes", []),
+            "messages": history,
+            "code_blocks": meta.get("code_blocks", []),
+            "tasks": meta.get("tasks", []),
+            "summary": meta.get("summary"),
+        }
+        await ws.send(json.dumps({
+            "type": "conversation",
+            "data": conv_data,
+        }))
+
+    elif kind == "get_node_files":
+        # Get source files for a node (gateway or firmware node)
+        # { type: "get_node_files", node_id: "gateway" }
+        node_id = msg.get("node_id", "")
+        files = []
+        
+        log.info(f"[get_node_files] Requesting files for node_id={node_id}")
+        log.info(f"[get_node_files] FIRMWARE_NODES_DIR={FIRMWARE_NODES_DIR}")
+        
+        # For gateway, show gateway main.cpp
+        if node_id == "gateway":
+            gateway_main = FIRMWARE_NODES_DIR / "src" / "gateway" / "main.cpp"
+            log.info(f"[get_node_files] Checking gateway path: {gateway_main}")
+            log.info(f"[get_node_files] Gateway path exists: {gateway_main.exists()}")
+            if gateway_main.exists():
+                try:
+                    with open(gateway_main, 'r') as f:
+                        content = f.read()
+                        files.append({
+                            "name": "src/gateway/main.cpp",
+                            "content": content,
+                        })
+                    log.info(f"[get_node_files] Loaded gateway main.cpp: {len(content)} bytes")
+                except Exception as e:
+                    log.error(f"[get_node_files] Error reading gateway main.cpp: {e}")
+            else:
+                log.warning(f"[get_node_files] Gateway main.cpp not found at {gateway_main}")
+        
+        # For other nodes, show their main.cpp
+        else:
+            node_dir = FIRMWARE_NODES_DIR / "src" / node_id
+            log.info(f"[get_node_files] Checking node path: {node_dir}")
+            if node_dir.exists():
+                main_cpp = node_dir / "main.cpp"
+                log.info(f"[get_node_files] Node main.cpp exists: {main_cpp.exists()}")
+                if main_cpp.exists():
+                    try:
+                        with open(main_cpp, 'r') as f:
+                            content = f.read()
+                            files.append({
+                                "name": f"src/{node_id}/main.cpp",
+                                "content": content,
+                            })
+                        log.info(f"[get_node_files] Loaded node main.cpp: {len(content)} bytes")
+                    except Exception as e:
+                        log.error(f"[get_node_files] Error reading node main.cpp: {e}")
+            else:
+                log.warning(f"[get_node_files] Node directory not found at {node_dir}")
+        
+        log.info(f"[get_node_files] Sending {len(files)} files to client")
+        await ws.send(json.dumps({
+            "type": "node_files",
+            "node_id": node_id,
+            "files": files,
+            "selected_file": files[0]["name"] if files else None,
+        }))
+
 
 
 async def run_ws_server():
@@ -931,7 +1386,16 @@ def main():
         STATIC_DIR.mkdir(parents=True)
         log.warning("Created empty static/ directory")
 
+    # Load past conversations from disk
+    _load_conversations_from_disk()
+    log.info("Loaded conversations from disk")
+
     mqtt_client = start_mqtt()
+
+    # Serial reader (USB tunnel from gateway) in a background thread
+    serial_thread = threading.Thread(target=start_serial_reader, daemon=True)
+    serial_thread.start()
+    log.info("Serial reader thread started")
 
     # HTTP server in a background thread
     http_thread = threading.Thread(target=run_http_server, daemon=True)
@@ -942,6 +1406,7 @@ def main():
         asyncio.run(run_ws_server())
     except KeyboardInterrupt:
         log.info("Shutting down")
+
 
 
 if __name__ == "__main__":

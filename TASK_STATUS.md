@@ -706,7 +706,8 @@ platformio test -e test
 | **Hardware** | ✅ | ESP32-S3 N16R8 specs, Gateway, UBS, AP |
 | **Partition Layout** | ✅ | 16 MB flash, NVS/factory/A-B/LittleFS |
 | **Template Firmware** | ✅ | Setup, loop, recovery, logging, MQTT |
-| **Factory Firmware** | ✅ | Minimal, immutable, recovery entry point |
+| **Factory Firmware** | ⚠️ | Compiled (modified to retry WiFi indefinitely); upload blocked by USB bootloader communication issue |
+| **Gateway Firmware** | ⚠️ | Compiled (WiFi AP + MQTT broker); upload blocked by same USB communication issue | |
 | **Gateway Node** | ✅ | AP, bridge, provisioning, recovery |
 | **OTA Pipeline** | ✅ | Compile, push, rollback, validation |
 | **Local Logging** | ✅ | LittleFS persistence, post-rollback retrieval |
