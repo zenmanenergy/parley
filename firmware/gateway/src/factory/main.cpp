@@ -84,15 +84,26 @@ static void led_update() {
 }
 
 // --- OTA over serial ----------------------------------------------------------
+// Transfer binary firmware from Pi via USB serial with checksumming and timeout detection.
+
+#define OTA_TRANSFER_TIMEOUT_MS  120000  // 2 minutes for entire transfer before timeout
+#define OTA_BYTE_TIMEOUT_MS      5000    // timeout for individual bytes
 
 static void handle_ota_transfer(uint32_t size_bytes) {
     Serial.println("OTA:READY");
+    Serial.flush();
 
     const esp_partition_t* target = esp_partition_find_first(
         ESP_PARTITION_TYPE_APP, ESP_PARTITION_SUBTYPE_APP_OTA_0, nullptr);
 
     if (!target) {
         Serial.println("OTA:ERR:no_ota0_partition");
+        return;
+    }
+
+    if (target->size < size_bytes) {
+        Serial.printf("OTA:ERR:partition_too_small_%u_vs_%u\n", 
+                     (unsigned)target->size, (unsigned)size_bytes);
         return;
     }
 
@@ -107,21 +118,42 @@ static void handle_ota_transfer(uint32_t size_bytes) {
     uint32_t next_chunk_ack = OTA_CHUNK_SIZE;
     uint32_t chunk_num = 0;
     esp_err_t ret = ESP_OK;
+    unsigned long transfer_start = millis();
+    unsigned long last_byte_time = millis();
+
+    Serial.printf("OTA:BEGIN size=%lu\n", (unsigned long)size_bytes);
+    Serial.flush();
 
     while (received < size_bytes) {
-        // Wait for data with watchdog feeds
+        // Wait for data with watchdog feeds and timeout detection
         while (!Serial.available()) {
+            unsigned long now = millis();
+            // Check for transfer timeout (no bytes at all for extended period)
+            if (now - transfer_start > OTA_TRANSFER_TIMEOUT_MS) {
+                Serial.println("OTA:ERR:transfer_timeout_overall");
+                esp_ota_abort(handle);
+                return;
+            }
+            // Check for byte timeout (no bytes received for a while)
+            if (now - last_byte_time > OTA_BYTE_TIMEOUT_MS) {
+                Serial.println("OTA:ERR:transfer_timeout_byte");
+                esp_ota_abort(handle);
+                return;
+            }
             esp_task_wdt_reset();
             led_update();
+            delay(10);  // small delay to avoid busy-loop
         }
 
         size_t to_read = min((uint32_t)sizeof(buf), size_bytes - received);
         int n = Serial.readBytes(buf, to_read);
         if (n <= 0) continue;
 
+        last_byte_time = millis();  // update timeout clock
+
         ret = esp_ota_write(handle, buf, n);
         if (ret != ESP_OK) {
-            char err[64];
+            char err[80];
             snprintf(err, sizeof(err), "OTA:ERR:write_failed_%s", esp_err_to_name(ret));
             Serial.println(err);
             esp_ota_abort(handle);
@@ -134,15 +166,32 @@ static void handle_ota_transfer(uint32_t size_bytes) {
         // Acknowledge each chunk so the Pi knows progress
         if (received >= next_chunk_ack || received >= size_bytes) {
             Serial.printf("OTA:CHUNK:%lu\n", (unsigned long)chunk_num++);
+            Serial.flush();
             next_chunk_ack += OTA_CHUNK_SIZE;
         }
     }
 
-    // Wait for the Pi's END marker
-    String end_line = Serial.readStringUntil('\n');
-    end_line.trim();
+    // Wait for the Pi's END marker with timeout
+    unsigned long end_marker_start = millis();
+    String end_line = "";
+    while (end_line.length() == 0) {
+        if (millis() - end_marker_start > 10000) {
+            Serial.println("OTA:ERR:end_marker_timeout");
+            esp_ota_abort(handle);
+            return;
+        }
+        if (Serial.available()) {
+            end_line = Serial.readStringUntil('\n');
+            end_line.trim();
+        } else {
+            esp_task_wdt_reset();
+            led_update();
+            delay(10);
+        }
+    }
+
     if (end_line != "OTA:END") {
-        Serial.println("OTA:ERR:missing_end_marker");
+        Serial.printf("OTA:ERR:bad_end_marker_%s\n", end_line.c_str());
         esp_ota_abort(handle);
         return;
     }
@@ -157,7 +206,7 @@ static void handle_ota_transfer(uint32_t size_bytes) {
         return;
     }
 
-    Serial.println("OTA:OK");
+    Serial.printf("OTA:OK received=%lu_bytes\n", (unsigned long)received);
     Serial.flush();
     delay(200);
     esp_restart();
@@ -177,15 +226,60 @@ static void handle_serial_line(const String& line) {
         ota_active = true;
         handle_ota_transfer(size);
         ota_active = false;
-    } else if (line == "STATUS") {
-        Serial.printf("GW_FACTORY fw=%s\n", GATEWAY_FACTORY_FW_VERSION);
-    } else if (line == "REBOOT") {
+    } 
+    else if (line == "STATUS") {
+        Serial.printf("GW_FACTORY fw=%s uptime=%lu heap=%lu\n", 
+                     GATEWAY_FACTORY_FW_VERSION, 
+                     millis() / 1000,
+                     esp_get_free_heap_size());
+    }
+    else if (line == "PARTITION") {
+        // Show partition table info
+        const esp_partition_t* running = esp_ota_get_running_partition();
+        Serial.printf("running_partition: %s (0x%x)\n", 
+                     running ? running->label : "?", 
+                     running ? running->subtype : 0);
+        
+        const esp_partition_t* next = esp_ota_get_next_update_partition(nullptr);
+        Serial.printf("next_update_partition: %s (0x%x)\n", 
+                     next ? next->label : "?", 
+                     next ? next->subtype : 0);
+    }
+    else if (line == "RESET_REASON") {
+        // Show why the chip last reset
+        esp_reset_reason_t reason = esp_reset_reason();
+        const char* reason_str = "?";
+        switch (reason) {
+            case ESP_RST_POWERON: reason_str = "POWER_ON"; break;
+            case ESP_RST_EXT: reason_str = "EXTERNAL"; break;
+            case ESP_RST_SW: reason_str = "SOFTWARE"; break;
+            case ESP_RST_PANIC: reason_str = "PANIC"; break;
+            case ESP_RST_INT_WDT: reason_str = "INT_WDT"; break;
+            case ESP_RST_TASK_WDT: reason_str = "TASK_WDT"; break;
+            case ESP_RST_WDT: reason_str = "WDT"; break;
+            case ESP_RST_DEEPSLEEP: reason_str = "DEEPSLEEP"; break;
+            case ESP_RST_BROWNOUT: reason_str = "BROWNOUT"; break;
+            case ESP_RST_SDIO: reason_str = "SDIO"; break;
+            case ESP_RST_USB_JTAG: reason_str = "USB_JTAG"; break;
+            case ESP_RST_USB_SERIAL_JTAG: reason_str = "USB_SERIAL_JTAG"; break;
+            case ESP_RST_USB_SERIAL_DEVICE: reason_str = "USB_SERIAL_DEVICE"; break;
+            case ESP_RST_JTAG: reason_str = "JTAG"; break;
+            default: break;
+        }
+        Serial.printf("reset_reason: %s (%d)\n", reason_str, (int)reason);
+    }
+    else if (line == "REBOOT") {
         Serial.println("REBOOTING");
         Serial.flush();
         delay(100);
         esp_restart();
     }
-    // Unknown lines silently ignored to avoid confusing the Pi-side script
+    else if (strlen(line.c_str()) > 0) {
+        // Unknown command - print help
+        Serial.printf("unknown: %s\n", line.c_str());
+        Serial.println("factory commands: OTA:<size> STATUS PARTITION RESET_REASON REBOOT");
+    }
+    // Empty lines are silently ignored
 }
 
 // --- Arduino entry points -----------------------------------------------------
