@@ -2,13 +2,16 @@
 
 Created comprehensive unit tests for the Parley dashboard and firmware.
 
+**Last Run:** 2026-07-10  
+**Total Tests:** 132 (all passing ✓)
+
 ## Backend Tests (Python) ✅
 
-**File:** `pi/dashboard/test_server.py`
-**Framework:** pytest
-**Tests:** 44 (all passing ✓)
+**Files:** `pi/dashboard/test_server.py` and `pi/dashboard/test_integration.py`  
+**Framework:** pytest  
+**Tests:** 99 (all passing ✓)
 
-### Test Coverage by Function
+### Test Coverage by Function (test_server.py)
 
 1. **extract_code_blocks()** — 8 tests
    - Empty/missing code blocks
@@ -24,59 +27,97 @@ Created comprehensive unit tests for the Parley dashboard and firmware.
    - Unique IDs
    - Case-insensitive parsing
 
-3. **load_part_library()** — 4 tests
+3. **extract_commands()** — 9 tests ✨ NEW
+   - COMMAND/CMD markers
+   - Single/multiple commands
+   - JSON payload parsing
+   - Error handling for invalid JSON
+   - Unique IDs and timestamps
+   - Case-insensitive markers
+
+4. **extract_reasoning()** — 9 tests ✨ NEW
+   - Reasoning block parsing
+   - Field extraction (observed, hypothesis, etc.)
+   - Confidence level validation
+   - Multiple reasoning blocks
+   - Full text preservation
+   - Case-insensitive markers
+
+5. **load_part_library()** — 4 tests
    - File existence
    - Valid/invalid JSON
    - Error handling
 
-4. **load_layout()** — 4 tests
+6. **load_layout()** — 4 tests
    - YAML parsing
    - File existence
    - Optional yaml module handling
 
-5. **get_relevant_part_entries()** — 7 tests
+7. **get_relevant_part_entries()** — 7 tests
    - Empty/missing library
    - Substring matching
    - Case-insensitive search
    - Multiple results
    - No matches
 
-6. **push_anomaly()** — 3 tests
+8. **push_anomaly()** — 3 tests
    - Anomaly addition
    - Max queue size
    - Timestamp validation
 
-7. **Conversation helpers** — 5 tests
+9. **Conversation helpers** — 5 tests
    - History retrieval
    - Message appending
    - Session isolation
    - Copy semantics
 
-8. **push_ota()** — 2 tests
+10. **push_ota()** — 2 tests
    - MQTT publishing
    - Message format
 
-### Running Tests
+11. **NodeRegistry class** — 13 tests
+   - Node upsert operations
+   - Node updates by ID
+   - Connectivity status calculation
+   - Thread safety
+   - Multiple node handling
+   - Sorted list retrieval
+   - State preservation
+
+### Integration Tests (test_integration.py) — 24 tests
+
+- WebSocket message routing (3 tests)
+- MQTT subscription and publishing (3 tests)
+- Claude AI conversation flow (3 tests)
+- Error collection and fix workflow (3 tests)
+- Recovery log handling (3 tests)
+- Error handling and edge cases (3 tests)
+- Part library and layout context injection (2 tests)
+- Telemetry handling (2 tests)
+- Node discovery and OTA updates (2 tests)
+
+### Running Backend Tests
 
 ```bash
 cd pi/dashboard
 pip install -r requirements-dev.txt
-pytest test_server.py -v
+pytest test_server.py test_integration.py -v
 ```
 
 ### Coverage
 
 - Pure functions: ~75% coverage
-- MQTT/WebSocket-dependent code: Integration tests needed
-- Async functions: Need special handling with pytest-asyncio
+- MQTT/WebSocket-dependent code: Integration tests with mocks
+- Async functions: Proper handling with pytest-asyncio
+- Node registry: Thread-safety verified
 
 ---
 
 ## Frontend Tests (JavaScript) ✅
 
-**File:** `pi/dashboard/static/app.test.js`
-**Framework:** Jest
-**Tests:** 30+ (ready to run)
+**File:** `pi/dashboard/static/app.test.js`  
+**Framework:** Jest  
+**Tests:** 33 (all passing ✓)
 
 ### Test Coverage by Function
 
@@ -114,7 +155,7 @@ pytest test_server.py -v
    - Word boundaries
    - Empty edge cases
 
-### Running Tests
+### Running Frontend Tests
 
 ```bash
 cd pi/dashboard
@@ -149,6 +190,31 @@ npm test
 9. **Integration** — 5 tests
 
 **Total:** ~70 firmware tests (not yet implemented)
+
+---
+
+## Summary
+
+| Component | Tests | Status |
+|-----------|-------|--------|
+| Backend (Python) | 99 | ✅ All passing |
+| Frontend (JavaScript) | 33 | ✅ All passing |
+| Firmware (C++) | 0/~70 | 🚧 Plan only |
+| **TOTAL** | **132** | **✅ All passing** |
+
+### Latest Test Results (2026-07-10)
+
+```
+Backend: 99 passed in 0.41s
+Frontend: 33 passed in 1.43s
+Total: 132 tests passing ✓
+```
+
+### Recent Additions
+
+- ✨ **extract_commands()** tests (9 tests) — Parse command blocks from Claude
+- ✨ **extract_reasoning()** tests (9 tests) — Parse reasoning blocks for transparency
+- ✨ **Integration tests** (24 tests) — Full system workflows including WebSocket, MQTT, Claude, and recovery
 
 ### Implementation Notes
 

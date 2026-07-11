@@ -1,0 +1,18 @@
+{
+  "id": "conv_2",
+  "title": "untitled",
+  "kind": "other",
+  "created": 1783730449.0017486,
+  "closed": null,
+  "related_nodes": [],
+  "messages": [
+    {
+      "role": "user",
+      "content": "conv2_msg",
+      "timestamp": 1783730449.0017486
+    }
+  ],
+  "code_blocks": [],
+  "tasks": [],
+  "summary": null
+}

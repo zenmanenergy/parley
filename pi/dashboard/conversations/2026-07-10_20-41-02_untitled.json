@@ -1,0 +1,33 @@
+{
+  "id": "test_conv_001",
+  "title": "untitled",
+  "kind": "other",
+  "created": 1783730462.253292,
+  "closed": null,
+  "related_nodes": [],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Create LED blink firmware",
+      "timestamp": 1783730462.2368739
+    },
+    {
+      "role": "system",
+      "content": "Compilation error: error: undefined reference to 'digitalWrite'",
+      "timestamp": 1783730462.2479703
+    },
+    {
+      "role": "user",
+      "content": "Fix this error",
+      "timestamp": 1783730462.2492998
+    },
+    {
+      "role": "system",
+      "content": "Rollback detected: boot_counter_exceeded",
+      "timestamp": 1783730462.253292
+    }
+  ],
+  "code_blocks": [],
+  "tasks": [],
+  "summary": null
+}

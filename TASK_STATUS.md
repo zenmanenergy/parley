@@ -1,7 +1,17 @@
 # Parley System Implementation Status
 
-**Last Updated:** 2026-06-06  
+**Last Updated:** 2026-07-10  
 **Overall Progress:** Foundation complete, dashboard and AI workflows operational, advanced features pending
+
+---
+
+## Test Status ✅
+
+**Python Unit Tests:** 99 passing  
+**JavaScript Frontend Tests:** 33 passing  
+**Total:** 132 tests passing (100% pass rate)
+
+*Latest additions:* extract_commands and extract_reasoning tests added for Claude message parsing.
 
 ---
 

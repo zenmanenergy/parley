@@ -608,5 +608,185 @@ class TestNodeRegistry:
 		assert nodes2[0]["status"] == "online"
 
 
+class TestExtractCommands:
+	"""Tests for extract_commands() function."""
+
+	def test_empty_text(self):
+		"""Empty text should return empty list."""
+		result = server.extract_commands("")
+		assert result == []
+
+	def test_no_commands(self):
+		"""Text without command markers should return empty list."""
+		text = "Just some regular text without any commands."
+		result = server.extract_commands(text)
+		assert result == []
+
+	def test_single_command_with_json_payload(self):
+		"""Single command with JSON payload should be extracted."""
+		text = '[COMMAND] nodes/motor-01/cmd/rotate {"angle": 90}'
+		result = server.extract_commands(text)
+		assert len(result) == 1
+		assert result[0]["node_id"] == "motor-01"
+		assert result[0]["channel"] == "rotate"
+		assert result[0]["payload"]["angle"] == 90
+		assert result[0]["status"] == "pending"
+		assert result[0]["auth_level"] == "confirmed"
+
+	def test_cmd_alias_format(self):
+		"""[CMD] alias should also be recognized."""
+		text = '[CMD] nodes/sensor-01/cmd/sample {"rate": 10}'
+		result = server.extract_commands(text)
+		assert len(result) == 1
+		assert result[0]["node_id"] == "sensor-01"
+
+	def test_multiple_commands(self):
+		"""Multiple commands should all be extracted."""
+		text = '''[COMMAND] nodes/motor-01/cmd/rotate {"angle": 90}
+		Some text in between.
+		[CMD] nodes/motor-02/cmd/speed {"rpm": 100}'''
+		result = server.extract_commands(text)
+		assert len(result) == 2
+		assert result[0]["node_id"] == "motor-01"
+		assert result[1]["node_id"] == "motor-02"
+
+	def test_command_with_invalid_json_payload(self):
+		"""Command with invalid JSON should have empty payload."""
+		text = '[COMMAND] nodes/motor-01/cmd/rotate {invalid json}'
+		result = server.extract_commands(text)
+		assert len(result) == 1
+		assert result[0]["payload"] == {}
+
+	def test_command_with_simple_payload(self):
+		"""Command with non-JSON payload should have empty payload."""
+		text = '[COMMAND] nodes/motor-01/cmd/on activate'
+		result = server.extract_commands(text)
+		assert len(result) == 1
+		assert result[0]["payload"] == {}
+
+	def test_command_has_id_and_timestamp(self):
+		"""Each command should have unique ID and timestamp."""
+		text = '[COMMAND] nodes/motor-01/cmd/rotate {"angle": 90}'
+		before = time.time()
+		result = server.extract_commands(text)
+		after = time.time()
+		assert result[0]["id"].startswith("cmd_")
+		assert "created" in result[0]
+		assert before <= result[0]["created"] <= after
+
+	def test_case_insensitive_command_marker(self):
+		"""Command marker should be case-insensitive."""
+		text1 = '[command] nodes/motor-01/cmd/rotate {"angle": 90}'
+		text2 = '[Command] nodes/motor-01/cmd/rotate {"angle": 90}'
+		result1 = server.extract_commands(text1)
+		result2 = server.extract_commands(text2)
+		assert len(result1) == 1
+		assert len(result2) == 1
+
+
+class TestExtractReasoning:
+	"""Tests for extract_reasoning() function."""
+
+	def test_empty_text(self):
+		"""Empty text should return empty list."""
+		result = server.extract_reasoning("")
+		assert result == []
+
+	def test_no_reasoning_blocks(self):
+		"""Text without reasoning markers should return empty list."""
+		text = "Just some regular text."
+		result = server.extract_reasoning(text)
+		assert result == []
+
+	def test_single_reasoning_block(self):
+		"""Single reasoning block should be extracted."""
+		text = """[REASONING]
+		- Observed: Temperature is rising
+		- Hypothesis: Thermal runaway condition
+		- Confidence: high
+		[/REASONING]"""
+		result = server.extract_reasoning(text)
+		assert len(result) == 1
+		assert result[0]["observed"] == "Temperature is rising"
+		assert result[0]["hypothesis"] == "Thermal runaway condition"
+		assert result[0]["confidence"] == "high"
+
+	def test_reasoning_with_all_fields(self):
+		"""Reasoning block with all fields should parse correctly."""
+		text = """[REASONING]
+		- Observed: Motor not responding
+		- Context: Last command was speed control
+		- Hypothesis: Motor controller reset
+		- Confidence: medium
+		- Next Step: Check motor controller logs
+		[/REASONING]"""
+		result = server.extract_reasoning(text)
+		assert len(result) == 1
+		assert result[0]["observed"] == "Motor not responding"
+		assert result[0]["context"] == "Last command was speed control"
+		assert result[0]["hypothesis"] == "Motor controller reset"
+		assert result[0]["confidence"] == "medium"
+		assert result[0]["next_step"] == "Check motor controller logs"
+
+	def test_multiple_reasoning_blocks(self):
+		"""Multiple reasoning blocks should all be extracted."""
+		text = """[REASONING]
+		- Observed: Error 1
+		- Hypothesis: Cause 1
+		- Confidence: high
+		[/REASONING]
+		Some text in between.
+		[REASONING]
+		- Observed: Error 2
+		- Hypothesis: Cause 2
+		- Confidence: low
+		[/REASONING]"""
+		result = server.extract_reasoning(text)
+		assert len(result) == 2
+		assert result[0]["observed"] == "Error 1"
+		assert result[1]["observed"] == "Error 2"
+
+	def test_reasoning_case_insensitive_markers(self):
+		"""Reasoning markers should be case-insensitive."""
+		text = """[reasoning]
+		- Observed: Test observation
+		- Hypothesis: Test hypothesis
+		[/reasoning]"""
+		result = server.extract_reasoning(text)
+		assert len(result) == 1
+		assert result[0]["observed"] == "Test observation"
+
+	def test_reasoning_default_confidence(self):
+		"""Reasoning without confidence field should default to medium."""
+		text = """[REASONING]
+		- Observed: Something happened
+		- Hypothesis: Maybe this is why
+		[/REASONING]"""
+		result = server.extract_reasoning(text)
+		assert result[0]["confidence"] == "medium"
+
+	def test_reasoning_invalid_confidence_ignored(self):
+		"""Invalid confidence values should be ignored."""
+		text = """[REASONING]
+		- Observed: Test
+		- Hypothesis: Test
+		- Confidence: very_high
+		[/REASONING]"""
+		result = server.extract_reasoning(text)
+		# Invalid confidence should not change default
+		assert result[0]["confidence"] == "medium"
+
+	def test_reasoning_full_text_preserved(self):
+		"""Full reasoning text should be preserved."""
+		text = """[REASONING]
+		- Observed: Multi-line
+		  observation details
+		- Hypothesis: Some hypothesis
+		[/REASONING]"""
+		result = server.extract_reasoning(text)
+		assert "Multi-line" in result[0]["full_text"]
+		assert "observation details" in result[0]["full_text"]
+
+
 if __name__ == "__main__":
 	pytest.main([__file__, "-v"])

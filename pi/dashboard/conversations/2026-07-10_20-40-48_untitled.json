@@ -1,0 +1,28 @@
+{
+  "id": "conv_123",
+  "title": "untitled",
+  "kind": "other",
+  "created": 1783730448.9996924,
+  "closed": null,
+  "related_nodes": [],
+  "messages": [
+    {
+      "role": "user",
+      "content": "msg1",
+      "timestamp": 1783730448.9986758
+    },
+    {
+      "role": "assistant",
+      "content": "msg2",
+      "timestamp": 1783730448.9996924
+    },
+    {
+      "role": "user",
+      "content": "msg3",
+      "timestamp": 1783730448.9996924
+    }
+  ],
+  "code_blocks": [],
+  "tasks": [],
+  "summary": null
+}
