@@ -73,6 +73,9 @@
 static char ap_ssid[64];
 static char ap_pass[64];
 
+// Forward declaration (defined later, after loop_peripheral)
+static bool check_usb_link();
+
 // Node registry: mac -> {node_id, last_seen, fw, status, boot_count}
 static JsonDocument registry_doc;
 static bool registry_dirty = false;
@@ -285,7 +288,7 @@ static void handle_discovery(const uint8_t* payload, unsigned int len) {
 
 		char buf[256];
 		serializeJson(anomaly, buf, sizeof(buf));
-		node_publish("system/anomalies", (const uint8_t*)buf, strlen(buf));
+		node_publish_raw("system/anomalies", (const uint8_t*)buf, strlen(buf));
 	}
 }
 
@@ -349,7 +352,7 @@ static void check_node_health() {
 
 			char buf[256];
 			serializeJson(anomaly, buf, sizeof(buf));
-			node_publish("system/anomalies", (const uint8_t*)buf, strlen(buf));
+			node_publish_raw("system/anomalies", (const uint8_t*)buf, strlen(buf));
 		}
 
 		// Flag nodes with high boot counts (indicates instability)
@@ -366,7 +369,7 @@ static void check_node_health() {
 
 			char buf[256];
 			serializeJson(anomaly, buf, sizeof(buf));
-			node_publish("system/anomalies", (const uint8_t*)buf, strlen(buf));
+			node_publish_raw("system/anomalies", (const uint8_t*)buf, strlen(buf));
 		}
 	}
 }
@@ -452,9 +455,11 @@ void setup_peripheral() {
 	check_usb_link();
 	node_log_local(LogLevel::INFO, "gw.init", "USB_link_%s", usb_link_up ? "up" : "down");
 
-	// Subscribe to discovery and provisioning topics
-	node_subscribe("discovery");      // template will route to peripheral_handle_command
-	node_subscribe("registered");
+	// Subscribe to discovery and provisioning topics using raw (absolute) topics.
+	// node_subscribe_raw() is used because system/discovery and system/registered
+	// are global topics, NOT node-namespaced command channels.
+	node_subscribe_raw("system/discovery");
+	node_subscribe_raw("system/registered");
 	node_subscribe("gateway/ota");
 	node_subscribe("gateway/config");  // for runtime AP configuration updates
 
@@ -488,19 +493,24 @@ void loop_peripheral() {
 // Check USB/network link to Pi — detects if USB CDC-ECM is functional
 // The Pi is statically configured at 192.168.4.2 on the usb0 interface.
 static bool check_usb_link() {
-	// Look for an active network interface with the Pi address
-	struct netif* netif = NULL;
+	// Parse the AP's own IP so we can exclude the AP netif from the check.
+	// Without this the AP interface (192.168.4.1) would always match.
+	ip4_addr_t ap_ip4;
+	ip4addr_aton(AP_IP, &ap_ip4);
+
+	struct netif* nif = nullptr;
 	bool found = false;
-	
-	for (netif = netif_list; netif != NULL; netif = netif->next) {
-		// Check if this netif is "up" and has an IP address
-		if (netif_is_up(netif) && !ip_addr_isany(&netif->ip_addr)) {
-			// We have at least one active interface (likely the USB one)
-			found = true;
-			break;
-		}
+
+	for (nif = netif_list; nif != nullptr; nif = nif->next) {
+		if (!netif_is_up(nif)) continue;
+		if (ip_addr_isany(&nif->ip_addr)) continue;
+		if (!IP_IS_V4(&nif->ip_addr)) continue;
+		// Skip the WiFi AP interface (192.168.4.1)
+		if (ip4_addr_cmp(netif_ip4_addr(nif), &ap_ip4)) continue;
+		found = true;
+		break;
 	}
-	
+
 	// Detect state change and log it
 	bool was_up = usb_link_up;
 	usb_link_up = found;
@@ -544,10 +554,12 @@ bool peripheral_health_check() {
 }
 
 void peripheral_handle_command(const char* channel, const uint8_t* payload, size_t len) {
-	// Route discovery, registration, OTA, and configuration commands
-	if (strcmp(channel, "discovery") == 0) {
+	// Route discovery, registration, OTA, and configuration commands.
+	// system/discovery and system/registered arrive as full topic strings (from node_subscribe_raw).
+	// gateway/ota and gateway/config arrive as channel suffixes (from node_subscribe).
+	if (strcmp(channel, "system/discovery") == 0) {
 		handle_discovery(payload, len);
-	} else if (strcmp(channel, "registered") == 0) {
+	} else if (strcmp(channel, "system/registered") == 0) {
 		handle_registered(payload, len);
 	} else if (strcmp(channel, "gateway/ota") == 0) {
 		// OTA for the gateway itself is handled by the template's OTA subsystem.
