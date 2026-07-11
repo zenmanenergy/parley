@@ -321,6 +321,98 @@ static void handle_registered(const uint8_t* payload, unsigned int len) {
 }
 
 // ============================================================================
+// Capability registration: track what each validated node can do
+// ============================================================================
+
+static void handle_capabilities(const uint8_t* payload, unsigned int len) {
+	JsonDocument msg;
+	if (deserializeJson(msg, payload, len) != DeserializationError::Ok) return;
+
+	const char* node_id = msg["node_id"];
+	if (!node_id) return;
+
+	node_log(LogLevel::INFO, "gateway: capabilities from %s", node_id);
+	node_log_local(LogLevel::INFO, "gw.capabilities", "node_id=%s", node_id);
+
+	// Find registry entry by node_id
+	JsonObject entry;
+	for (JsonPair kv : registry_doc.as<JsonObject>()) {
+		JsonObject e = kv.value().as<JsonObject>();
+		if (e["node_id"] == node_id) {
+			entry = e;
+			break;
+		}
+	}
+
+	if (entry.isNull()) {
+		node_log(LogLevel::WARN, "gateway: capabilities from unknown node %s", node_id);
+		return;
+	}
+
+	// Store capability info in registry
+	entry["capabilities"] = msg.as<JsonObject>();
+	entry["status"] = "registered";  // now fully integrated
+	entry["last_seen"] = millis() / 1000;
+
+	registry_dirty = true;
+}
+
+// ============================================================================
+// Capability inventory: periodically publish system-wide capability manifest
+// ============================================================================
+
+static unsigned long last_capability_publish = 0;
+#define CAPABILITY_PUBLISH_INTERVAL_MS 60000  // every 60 seconds
+
+static void publish_capability_inventory() {
+	unsigned long now = millis();
+	if (now - last_capability_publish < CAPABILITY_PUBLISH_INTERVAL_MS) {
+		return;
+	}
+	last_capability_publish = now;
+
+	// Build inventory of all registered capabilities across all nodes
+	JsonDocument inventory;
+	inventory["timestamp"] = now / 1000;
+	inventory["node_count"] = registry_doc.size();
+
+	JsonObject capabilities_by_type = inventory["capabilities_by_type"].to<JsonObject>();
+	JsonObject nodes_by_capability = inventory["nodes_by_capability"].to<JsonObject>();
+
+	// Scan registry and collect capabilities
+	for (JsonPair kv : registry_doc.as<JsonObject>()) {
+		JsonObject entry = kv.value().as<JsonObject>();
+		const char* nid = entry["node_id"] | "unknown";
+
+		if (!entry["capabilities"].isNull()) {
+			JsonObject caps = entry["capabilities"].as<JsonObject>();
+
+			// Collect all capability types
+			for (JsonPair cap_kv : caps) {
+				const char* cap_type = cap_kv.key().c_str();
+
+				// Track which nodes have this capability
+				JsonArray node_list = nodes_by_capability[cap_type].to<JsonArray>();
+				node_list.add(nid);
+
+				// Count capability occurrences
+				if (capabilities_by_type[cap_type].isNull()) {
+					capabilities_by_type[cap_type] = 0;
+				}
+				capabilities_by_type[cap_type] = (int)capabilities_by_type[cap_type] + 1;
+			}
+		}
+	}
+
+	// Publish inventory
+	char buf[1024];
+	serializeJson(inventory, buf, sizeof(buf));
+	node_publish_raw("system/capability_inventory", (const uint8_t*)buf, strlen(buf));
+
+	node_log_local(LogLevel::DEBUG, "gw.inventory", "published capability manifest for %d nodes", registry_doc.size());
+}
+
+// ============================================================================
 // Health monitoring: detect silent and flaky nodes
 // ============================================================================
 
@@ -460,6 +552,7 @@ void setup_peripheral() {
 	// are global topics, NOT node-namespaced command channels.
 	node_subscribe_raw("system/discovery");
 	node_subscribe_raw("system/registered");
+	node_subscribe_raw("system/capabilities/+");  // subscribes to system/capabilities/<node_id>
 	node_subscribe("gateway/ota");
 	node_subscribe("gateway/config");  // for runtime AP configuration updates
 
@@ -482,6 +575,9 @@ void loop_peripheral() {
 		save_registry();
 		last_registry_save = now;
 	}
+
+	// Publish capability inventory periodically
+	publish_capability_inventory();
 
 	// Check node health periodically
 	if (now - last_health_check >= HEALTH_CHECK_INTERVAL_MS) {
@@ -554,13 +650,15 @@ bool peripheral_health_check() {
 }
 
 void peripheral_handle_command(const char* channel, const uint8_t* payload, size_t len) {
-	// Route discovery, registration, OTA, and configuration commands.
-	// system/discovery and system/registered arrive as full topic strings (from node_subscribe_raw).
-	// gateway/ota and gateway/config arrive as channel suffixes (from node_subscribe).
+	// Route discovery, registration, capabilities, OTA, and configuration commands.
+	// system/discovery, system/registered, and system/capabilities/* arrive as full topic strings.
+	// gateway/ota and gateway/config arrive as channel suffixes.
 	if (strcmp(channel, "system/discovery") == 0) {
 		handle_discovery(payload, len);
 	} else if (strcmp(channel, "system/registered") == 0) {
 		handle_registered(payload, len);
+	} else if (strstr(channel, "system/capabilities/") != NULL) {
+		handle_capabilities(payload, len);
 	} else if (strcmp(channel, "gateway/ota") == 0) {
 		// OTA for the gateway itself is handled by the template's OTA subsystem.
 		// This callback is called if the command arrives; template will process it.
