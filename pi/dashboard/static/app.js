@@ -158,7 +158,7 @@ function handleMessage(msg) {
 			break;
 
 		case 'ai_message_done':
-			finaliseAiMessage(msg.conv_id, msg.code_blocks || [], msg.tasks || []);
+			finaliseAiMessage(msg.conv_id, msg.code_blocks || [], msg.tasks || [], msg.commands || [], msg.reasoning || []);
 			break;
 
 		case 'ai_error':
@@ -307,13 +307,33 @@ function appendAiChunk(convId, text) {
 	if (container) container.scrollTop = container.scrollHeight;
 }
 
-function finaliseAiMessage(convId, codeBlocks, tasks) {
+function finaliseAiMessage(convId, codeBlocks, tasks, commands, reasoning) {
 	const sm = _streamingMsg[convId];
 	if (sm) {
 		const bubble = sm.el.querySelector('.chat-msg-bubble');
 		bubble.innerHTML = renderMarkdownLite(sm.full);
 		sm.el.classList.remove('streaming');
 		delete _streamingMsg[convId];
+	}
+
+	// Display reasoning blocks if any
+	if (reasoning && reasoning.length > 0) {
+		const container = document.getElementById(`chat-${convId}`);
+		if (container) {
+			reasoning.forEach(reason => {
+				displayReasoningBlock(container, reason);
+			});
+		}
+	}
+
+	// Display inline commands if any
+	if (commands && commands.length > 0) {
+		const container = document.getElementById(`chat-${convId}`);
+		if (container) {
+			commands.forEach(cmd => {
+				displayInlineCommand(container, cmd, convId);
+			});
+		}
 	}
 
 	// Store code blocks on the conversation for triggerCompile()
@@ -482,6 +502,103 @@ function renderMarkdownLite(text) {
 		.replace(/`([^`]+)`/g, '<code style="background:var(--surface2);padding:1px 4px;border-radius:3px">$1</code>')
 		.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
 		.replace(/\n/g, '<br>');
+}
+
+// Display an inline command from AI response
+function displayInlineCommand(container, cmd, convId) {
+	const el = document.createElement('div');
+	el.className = 'chat-msg ai';
+	el.id = `cmd-${cmd.id}`;
+	el.innerHTML = `
+		<div class="chat-msg-bubble" style="background: rgba(63, 137, 255, 0.08); border-left: 3px solid #3f89ff; padding: 10px">
+			<div style="font-weight: 600; color: #3f89ff; margin-bottom: 6px">↓ Command</div>
+			<div style="font-family: monospace; font-size: 12px; color: var(--text); margin-bottom: 8px">
+				<span style="color: var(--text-mute)">→</span> <strong>nodes/${escHtml(cmd.node_id)}/cmd/${escHtml(cmd.channel)}</strong> ${escHtml(JSON.stringify(cmd.payload))}
+			</div>
+			<div style="display: flex; gap: 8px">
+				<button class="send-btn" style="padding: 4px 10px; font-size: 11px; background: var(--green); color: #000; border: none; border-radius: 4px; cursor: pointer; font-weight: 600" 
+					onclick="executeAiCommand('${convId}', '${escHtml(cmd.id)}', '${escHtml(cmd.node_id)}', '${escHtml(cmd.channel)}', ${JSON.stringify(cmd.payload).replace(/'/g, "&#39;")})">
+					Execute
+				</button>
+				<button class="send-btn" style="padding: 4px 10px; font-size: 11px; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; cursor: pointer" 
+					onclick="cancelAiCommand('${convId}', '${escHtml(cmd.id)}')">
+					Skip
+				</button>
+			</div>
+			<div class="cmd-status" id="status-${cmd.id}" style="margin-top: 8px; font-size: 11px; color: var(--text-mute)"></div>
+		</div>
+		<div class="chat-msg-meta">AI</div>
+	`;
+	container.appendChild(el);
+	container.scrollTop = container.scrollHeight;
+}
+
+// Execute a command that was issued by AI
+function executeAiCommand(convId, cmdId, nodeId, channel, payload) {
+	const statusEl = document.getElementById(`status-${cmdId}`);
+	if (statusEl) statusEl.innerHTML = '⟳ Executing...';
+	
+	// Send the command
+	send({ type: 'send_command', node_id: nodeId, channel: channel, payload: payload });
+	
+	// Mark as executed (simple state)
+	setTimeout(() => {
+		if (statusEl) statusEl.innerHTML = '✓ Sent (waiting for response)';
+	}, 300);
+}
+
+// Cancel an inline command
+function cancelAiCommand(convId, cmdId) {
+	const el = document.getElementById(`cmd-${cmdId}`);
+	if (el) {
+		el.style.opacity = '0.6';
+		const statusEl = document.getElementById(`status-${cmdId}`);
+		if (statusEl) statusEl.innerHTML = '(skipped)';
+	}
+}
+
+// Display reasoning block from AI response
+function displayReasoningBlock(container, reason) {
+	const el = document.createElement('div');
+	el.className = 'chat-msg ai';
+	el.id = `reason-${reason.id}`;
+	
+	const confidenceColor = {
+		'high': '#3fbf50',
+		'medium': '#f5a623',
+		'low': '#e74c3c'
+	}[reason.confidence] || '#888';
+	
+	let reasoningHtml = `
+		<div class="chat-msg-bubble" style="background: rgba(100, 100, 255, 0.08); border-left: 3px solid #6464ff; padding: 12px">
+			<div style="font-weight: 600; color: #6464ff; margin-bottom: 8px; display: flex; align-items: center; gap: 6px">
+				<span>⚙ Reasoning Chain</span>
+				<span style="font-size: 10px; background: ${confidenceColor}; color: white; padding: 2px 6px; border-radius: 3px; font-weight: 600; text-transform: uppercase">${reason.confidence}</span>
+			</div>
+	`;
+	
+	if (reason.observed) {
+		reasoningHtml += `<div style="margin-bottom: 6px; font-size: 12px"><strong>📊 Observed:</strong> ${escHtml(reason.observed)}</div>`;
+	}
+	if (reason.context) {
+		reasoningHtml += `<div style="margin-bottom: 6px; font-size: 12px"><strong>📋 Context:</strong> ${escHtml(reason.context)}</div>`;
+	}
+	if (reason.hypothesis) {
+		reasoningHtml += `<div style="margin-bottom: 6px; font-size: 12px"><strong>💡 Hypothesis:</strong> ${escHtml(reason.hypothesis)}</div>`;
+	}
+	if (reason.next_step) {
+		reasoningHtml += `<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(100,100,255,0.2); font-size: 12px"><strong>→ Next Step:</strong> ${escHtml(reason.next_step)}</div>`;
+	}
+	
+	reasoningHtml += `</div>`;
+	
+	el.innerHTML = `
+		${reasoningHtml}
+		<div class="chat-msg-meta">Reasoning</div>
+	`;
+	
+	container.appendChild(el);
+	container.scrollTop = container.scrollHeight;
 }
 
 // Global helpers called from inline onclick
@@ -2587,3 +2704,106 @@ setInterval(() => {
 // Boot
 // ---------------------------------------------------------------------------
 connect();
+
+// Initialize mobile drawer and swipe navigation
+initMobileEnvironment();
+
+// ---------------------------------------------------------------------------
+// Mobile drawer and swipe navigation
+// ---------------------------------------------------------------------------
+
+function initMobileEnvironment() {
+	const isMobile = window.innerWidth <= 800;
+	if (!isMobile) return;
+	
+	// Update viewport for mobile
+	let viewportMeta = document.querySelector('meta[name="viewport"]');
+	if (!viewportMeta) {
+		viewportMeta = document.createElement('meta');
+		viewportMeta.name = 'viewport';
+		viewportMeta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+		document.head.appendChild(viewportMeta);
+	}
+	
+	// Create drawer toggle button
+	const toggle = document.createElement('button');
+	toggle.className = 'drawer-toggle';
+	toggle.id = 'drawer-toggle-btn';
+	toggle.textContent = '⚙';
+	toggle.title = 'Show/hide context & tasks';
+	document.body.appendChild(toggle);
+	
+	toggle.addEventListener('click', () => {
+		const rightPanel = document.getElementById('panel-right');
+		if (rightPanel) {
+			const isOpen = rightPanel.classList.contains('drawer-open');
+			if (isOpen) {
+				rightPanel.classList.remove('drawer-open');
+				rightPanel.classList.add('drawer-closed');
+				toggle.style.background = 'var(--accent)';
+			} else {
+				rightPanel.classList.remove('drawer-closed');
+				rightPanel.classList.add('drawer-open');
+				toggle.style.background = 'var(--green)';
+			}
+		}
+	});
+	
+	// Initialize right panel as drawer (closed)
+	const rightPanel = document.getElementById('panel-right');
+	if (rightPanel) {
+		rightPanel.classList.add('drawer-closed');
+	}
+	
+	// Initialize swipe detection
+	initSwipeNavigation();
+}
+
+let touchStartX = 0;
+let touchStartY = 0;
+
+function initSwipeNavigation() {
+	document.addEventListener('touchstart', (e) => {
+		touchStartX = e.touches[0].clientX;
+		touchStartY = e.touches[0].clientY;
+	}, { passive: true });
+	
+	document.addEventListener('touchend', (e) => {
+		if (!e.changedTouches.length) return;
+		
+		const touchEndX = e.changedTouches[0].clientX;
+		const touchEndY = e.changedTouches[0].clientY;
+		
+		const deltaX = touchEndX - touchStartX;
+		const deltaY = touchEndY - touchStartY;
+		
+		// Only trigger swipe if X movement is significant and Y movement is small
+		if (Math.abs(deltaX) > 50 && Math.abs(deltaY) < 50) {
+			if (deltaX > 50) {
+				onSwipeRight();
+			} else if (deltaX < -50) {
+				onSwipeLeft();
+			}
+		}
+	}, { passive: true });
+}
+
+function onSwipeRight() {
+	const rightPanel = document.getElementById('panel-right');
+	if (rightPanel && rightPanel.classList.contains('drawer-open')) {
+		rightPanel.classList.remove('drawer-open');
+		rightPanel.classList.add('drawer-closed');
+		const toggle = document.getElementById('drawer-toggle-btn');
+		if (toggle) toggle.style.background = 'var(--accent)';
+	}
+}
+
+function onSwipeLeft() {
+	const rightPanel = document.getElementById('panel-right');
+	if (rightPanel) {
+		rightPanel.classList.remove('drawer-closed');
+		rightPanel.classList.add('drawer-open');
+		const toggle = document.getElementById('drawer-toggle-btn');
+		if (toggle) toggle.style.background = 'var(--green)';
+	}
+}

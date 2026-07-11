@@ -161,6 +161,59 @@ The shared `lib_deps` from the base [env] section are inherited automatically.
 - peripheral_health_check(): only check health, no side effects
 - Avoid delay() — use millis() timing patterns
 
+## Issuing Commands to Nodes
+When you want to send a command to a node to test behavior, diagnose issues, or calibrate hardware, use this format:
+
+```
+[COMMAND] nodes/<node_id>/cmd/<channel> {"key": value, ...}
+```
+
+Examples:
+```
+[COMMAND] nodes/motor-left/cmd/rotate {"angle": 90}
+[COMMAND] nodes/imu-01/cmd/request_status {}
+[COMMAND] nodes/led-strip/cmd/set_color {"r": 255, "g": 128, "b": 0}
+```
+
+The dashboard will:
+1. Display the command in the conversation as "AI issued command..."
+2. Send it via MQTT to the node
+3. Show the node's response (if any) below the command
+4. Allow you to analyze the results and issue follow-up commands
+
+Use commands to:
+- Test sensor readings under different conditions
+- Calibrate actuator ranges
+- Verify connectivity
+- Diagnose issues in real-time
+- Validate fixes before committing to firmware
+
+## Showing Your Reasoning
+Always make your reasoning transparent. When you draw a conclusion, explain it:
+
+```
+[REASONING]
+- Observed: <what the data/logs show>
+- Context: <relevant system facts or prior work>
+- Hypothesis: <your interpretation>
+- Confidence: <high/medium/low>
+- Next Step: <what to do based on this reasoning>
+[/REASONING]
+```
+
+Example:
+```
+[REASONING]
+- Observed: Motor encoder reports 82° rotation when commanded 180°
+- Context: Layout says gear ratio is 2:1, but observed is ~2.2:1
+- Hypothesis: Mechanical slack or calibration offset — the motor isn't geared perfectly as modeled
+- Confidence: high — this is repeatable and consistent
+- Next Step: Test at multiple angles to confirm linearity, then recalibrate in NVS
+[/REASONING]
+```
+
+Humans can see your evidence and spot if you've misinterpreted data. It builds trust and makes debugging faster.
+
 ## Output Format
 When writing firmware, always use this exact format so the dashboard can parse it:
 
@@ -703,8 +756,10 @@ async def stream_claude(ws: ServerConnection, conv_id: str, user_message: str, n
 
 	code_blocks = extract_code_blocks(full_text)
 	tasks = extract_tasks(full_text)
+	commands = extract_commands(full_text)
+	reasoning_blocks = extract_reasoning(full_text)
 
-	# Update metadata with code blocks and tasks
+	# Update metadata with code blocks, tasks, and commands
 	_set_conv_metadata(conv_id, code_blocks=code_blocks, tasks=tasks)
 
 	await ws.send(json.dumps({
@@ -712,6 +767,8 @@ async def stream_claude(ws: ServerConnection, conv_id: str, user_message: str, n
 		"conv_id": conv_id,
 		"code_blocks": code_blocks,
 		"tasks": tasks,
+		"commands": commands,
+		"reasoning": reasoning_blocks,
 	}))
 	return full_text
 
@@ -771,6 +828,100 @@ def extract_tasks(text: str) -> List[dict]:
 			task_id_counter += 1
 	
 	return tasks
+
+
+def extract_commands(text: str) -> List[dict]:
+	"""Extract command blocks from Claude's response.
+	
+	Looks for patterns like:
+	- [COMMAND] nodes/<node_id>/cmd/<channel> <json_payload>
+	- [CMD] nodes/motor-01/cmd/rotate {"angle": 90}
+	"""
+	commands = []
+	cmd_id_counter = 0
+	
+	# Pattern: [COMMAND] or [CMD] followed by nodes/... /cmd/... and JSON payload
+	cmd_pattern = re.compile(
+		r'\[(?:COMMAND|CMD)\]\s+nodes/([^/]+)/cmd/([^\s]+)\s+({[^}]*}|\S+)',
+		re.MULTILINE | re.IGNORECASE
+	)
+	
+	for m in cmd_pattern.finditer(text):
+		node_id = m.group(1).strip()
+		channel = m.group(2).strip()
+		payload_str = m.group(3).strip()
+		
+		try:
+			# Try to parse as JSON
+			if payload_str.startswith('{'):
+				payload = json.loads(payload_str)
+			else:
+				payload = {}
+		except json.JSONDecodeError:
+			payload = {}
+		
+		commands.append({
+			"id": f"cmd_{cmd_id_counter}",
+			"node_id": node_id,
+			"channel": channel,
+			"payload": payload,
+			"auth_level": "confirmed",  # Default to confirmed for safety
+			"status": "pending",
+			"created": time.time(),
+		})
+		cmd_id_counter += 1
+	
+	return commands
+
+
+def extract_reasoning(text: str) -> List[dict]:
+	"""Extract reasoning blocks from Claude's response.
+	
+	Looks for patterns like:
+	[REASONING]
+	- Observed: ...
+	- Hypothesis: ...
+	- Confidence: ...
+	[/REASONING]
+	"""
+	reasoning_blocks = []
+	
+	# Pattern: [REASONING] ... [/REASONING]
+	pattern = re.compile(r'\[REASONING\]\s*(.*?)\s*\[/REASONING\]', re.DOTALL | re.IGNORECASE)
+	
+	for m in pattern.finditer(text):
+		block_text = m.group(1).strip()
+		
+		# Parse the reasoning block into structured fields
+		reasoning = {
+			"id": f"reason_{len(reasoning_blocks)}",
+			"full_text": block_text,
+			"observed": "",
+			"context": "",
+			"hypothesis": "",
+			"confidence": "medium",
+			"next_step": "",
+		}
+		
+		# Try to extract individual fields
+		for line in block_text.split('\n'):
+			line = line.strip()
+			if line.startswith('- Observed:'):
+				reasoning["observed"] = line.replace('- Observed:', '').strip()
+			elif line.startswith('- Context:'):
+				reasoning["context"] = line.replace('- Context:', '').strip()
+			elif line.startswith('- Hypothesis:'):
+				reasoning["hypothesis"] = line.replace('- Hypothesis:', '').strip()
+			elif line.startswith('- Confidence:'):
+				confidence_str = line.replace('- Confidence:', '').strip().lower()
+				if confidence_str in ('high', 'medium', 'low'):
+					reasoning["confidence"] = confidence_str
+			elif line.startswith('- Next Step:'):
+				reasoning["next_step"] = line.replace('- Next Step:', '').strip()
+		
+		reasoning_blocks.append(reasoning)
+	
+	return reasoning_blocks
 
 
 # ---------------------------------------------------------------------------

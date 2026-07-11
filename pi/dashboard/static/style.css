@@ -1682,14 +1682,176 @@ canvas.sparkline {
 /* ===== Responsive: phones ===== */
 @media (max-width: 800px) {
 	.panels {
-		grid-template-columns: 1fr;
-		grid-template-rows: auto;
+		display: flex;
+		flex-direction: column;
+		position: relative;
 	}
 	.panel {
 		border-right: none;
 		border-bottom: 1px solid var(--border);
-		max-height: 50vh;
+		width: 100%;
+		transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 	}
-	.panel-center { max-height: none; flex: 1; }
-	.panel-right  { display: none; }
+	.panel-left {
+		flex: 0 0 50%;
+		max-height: 50vh;
+		overflow: hidden;
+	}
+	.panel-center {
+		flex: 1;
+		min-width: auto;
+	}
+	.panel-right {
+		position: fixed;
+		right: 0;
+		bottom: 0;
+		width: 100%;
+		height: 0;
+		max-width: none;
+		border-left: none;
+		border-top: 1px solid var(--border);
+		overflow-y: auto;
+		z-index: 50;
+		background: var(--surface);
+		transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+	}
+	.panel-right.drawer-open {
+		height: 50vh;
+	}
+	.panel-right.drawer-closed {
+		height: 0;
+		border-top: none;
+	}
+	
+	/* Health indicators: hide on small screens */
+	.health-indicators {
+		display: none;
+	}
+	
+	/* Drawer toggle button */
+	.drawer-toggle {
+		position: fixed;
+		bottom: 20px;
+		right: 20px;
+		width: 56px;
+		height: 56px;
+		background: var(--accent);
+		border: none;
+		border-radius: 50%;
+		color: #fff;
+		font-size: 24px;
+		font-weight: bold;
+		cursor: pointer;
+		z-index: 60;
+		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+		transition: background 0.2s;
+	}
+	.drawer-toggle:active {
+		transform: scale(0.95);
+	}
+	
+	/* Touch-friendly buttons */
+	button {
+		min-height: 44px;
+		min-width: 44px;
+	}
+	
+	/* Reduce left panel on mobile */
+	.node-list {
+		padding: 4px;
+	}
+	.node-card {
+		padding: 8px 8px;
+		margin-bottom: 2px;
+	}
+	.node-card-id {
+		font-size: 12px;
+	}
+	.node-card-meta {
+		font-size: 10px;
+	}
+	
+	/* Chat input optimization */
+	.chat-input-row {
+		padding: 8px;
+		gap: 6px;
+	}
+	.chat-input {
+		height: 36px;
+		min-height: 36px;
+		font-size: 14px;
+	}
+	.chat-send-btn {
+		padding: 6px 12px;
+		font-size: 12px;
+	}
+	
+	/* Reduce padding in chat */
+	.chat-messages {
+		padding: 10px;
+		gap: 8px;
+	}
+	.chat-msg {
+		max-width: 90%;
+	}
+	.chat-msg-bubble {
+		padding: 8px 12px;
+		font-size: 12px;
+	}
+	
+	/* Reduce detail grid items */
+	.detail-grid {
+		grid-template-columns: repeat(2, 1fr);
+		gap: 6px;
+		padding: 10px;
+	}
+	.detail-cell {
+		padding: 6px 8px;
+	}
+	.detail-cell-value {
+		font-size: 12px;
+	}
+	
+	/* Tabs font */
+	.tabs {
+		padding: 6px 10px 0;
+		gap: 0;
+	}
+	.tab-btn {
+		padding: 6px 10px;
+		font-size: 11px;
+	}
+	
+	/* Reduce telemetry list */
+	.telemetry-entry {
+		padding: 8px 10px;
+	}
+	.telemetry-value {
+		font-size: 12px;
+	}
+	
+	/* Right panel: optimize for drawer */
+	.rp-tabbar {
+		padding: 8px 4px;
+	}
+	.rp-tab {
+		padding: 6px 2px;
+		font-size: 11px;
+	}
+	
+	/* Reduce modal size */
+	.modal {
+		width: 95vw;
+	}
+	.modal-body {
+		padding: 12px;
+	}
 }
+
+/* ===== Swipe detection utilities ===== */
+.touch-swipe-area {
+	touch-action: pan-x;
+	-webkit-user-select: none;
+	user-select: none;
+}
+
